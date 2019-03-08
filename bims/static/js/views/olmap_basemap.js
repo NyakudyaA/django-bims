@@ -92,7 +92,7 @@ define(['backbone', 'underscore', 'jquery', 'ol', 'olMapboxStyle'], function (Ba
                 title: 'Aerial photography',
                 source: new ol.source.XYZ({
                     attributions: ['<a href="http://www.ngi.gov.za/">CD:NGI Aerial</a>'],
-                    url: '/bims_proxy/http://aerial.openstreetmap.org.za/ngi-aerial/{z}/{x}/{y}.jpg'
+                    url: '/bims_proxy/http://c.aerial.openstreetmap.org.za/ngi-aerial/{z}/{x}/{y}.jpg'
                 })
             });
 
