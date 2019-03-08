@@ -18,12 +18,13 @@ define([
     'views/right_panel/records_detail',
     'views/biodiversity_legend',
     'views/detail_dashboard/taxon_detail',
-    'views/detail_dashboard/site_detail'
+    'views/detail_dashboard/site_detail',
+    'htmlToCanvas'
 ], function (Backbone, _, Shared, LocationSiteCollection, ClusterCollection,
              ClusterBiologicalCollection, MapControlPanelView, SidePanelView,
              ol, $, LayerSwitcher, Basemap, Layers, Geocontext,
              LocationSiteDetail, TaxonDetail, RecordsDetail, BioLegendView,
-             TaxonDetailDashboard, SiteDetailedDashboard) {
+             TaxonDetailDashboard, SiteDetailedDashboard, HtmlToCanvas) {
     return Backbone.View.extend({
         template: _.template($('#map-template').html()),
         className: 'map-wrapper',
@@ -35,12 +36,17 @@ define([
         previousZoom: 0,
         sidePanelView: null,
         initZoom: 7,
+        numInFlightTiles: 0,
+        scaleLineControl: null,
+        mapIsReady: false,
         initCenter: [22.937506, -30.559482],
         events: {
             'click .zoom-in': 'zoomInMap',
             'click .zoom-out': 'zoomOutMap',
             'click .layer-control': 'layerControlClicked',
-            'click #map-legend-wrapper': 'mapLegendClicked'
+            'click #map-legend-wrapper': 'mapLegendClicked',
+            'click .print-map-control': 'downloadMap',
+            'click #start-tutorial': 'startTutorial',
         },
         clusterLevel: {
             5: 'country',
@@ -51,7 +57,7 @@ define([
         initialize: function () {
             // Ensure methods keep the `this` references to the view itself
             _.bindAll(this, 'render');
-            this.layers = new Layers({parent:this});
+            this.layers = new Layers({parent: this});
             this.locationSiteCollection = new LocationSiteCollection();
             this.clusterCollection = new ClusterCollection();
             this.geocontext = new Geocontext();
@@ -59,7 +65,7 @@ define([
             new TaxonDetail();
             new RecordsDetail();
             this.taxonDetailDashboard = new TaxonDetailDashboard();
-            this.siteDetailedDashboard = new SiteDetailedDashboard();
+            this.siteDetailedDashboard = new SiteDetailedDashboard({parent: this});
 
             Shared.CurrentState.FETCH_CLUSTERS = true;
 
@@ -78,22 +84,22 @@ define([
             Shared.Dispatcher.on('map:removeHighlightPinnedFeature', this.removeHighlightPinnedFeature, this);
             Shared.Dispatcher.on('map:switchHighlightPinned', this.switchHighlightPinned, this);
             Shared.Dispatcher.on('map:closeHighlightPinned', this.closeHighlightPinned, this);
-            Shared.Dispatcher.on('map:refetchRecords', this.refetchRecords, this);
             Shared.Dispatcher.on('map:zoomToHighlightPinnedFeatures', this.zoomToHighlightPinnedFeatures, this);
             Shared.Dispatcher.on('map:boundaryEnabled', this.boundaryEnabled, this);
-            Shared.Dispatcher.on('map:finishFetching', this.fetchingFinish, this);
-            Shared.Dispatcher.on('map:startFetching', this.fetchingStart, this);
             Shared.Dispatcher.on('map:zoomToDefault', this.zoomToDefault, this);
             Shared.Dispatcher.on('map:clearAllLayers', this.clearAllLayers, this);
+            Shared.Dispatcher.on('map:updateBiodiversityLayerParams', this.updateBiodiversityLayerParams, this);
             Shared.Dispatcher.on('map:updateClusterBiologicalCollectionTaxon', this.updateClusterBiologicalCollectionTaxonID, this);
 
             Shared.Dispatcher.on('map:showMapLegends', this.showMapLegends, this);
             Shared.Dispatcher.on('map:showTaxonDetailedDashboard', this.showTaxonDetailedDashboard, this);
             Shared.Dispatcher.on('map:showSiteDetailedDashboard', this.showSiteDetailedDashboard, this);
             Shared.Dispatcher.on('map:closeDetailedDashboard', this.closeDetailedDashboard, this);
+            Shared.Dispatcher.on('map:downloadMap', this.downloadMap, this);
+            Shared.Dispatcher.on('map:resetSitesLayer', this.resetSitesLayer, this);
 
             this.render();
-            this.clusterBiologicalCollection = new ClusterBiologicalCollection(this.initExtent);
+            this.clusterBiologicalCollection = new ClusterBiologicalCollection(this);
             this.mapControlPanel.searchView.initDateFilter();
             this.showInfoPopup();
 
@@ -168,14 +174,66 @@ define([
         },
         mapClicked: function (e) {
             var self = this;
-            var features = self.map.getFeaturesAtPixel(e.pixel);
             this.layers.highlightVectorSource.clear();
             this.hidePopup();
 
+            // Get lat and long map
+            let lonlat = ol.proj.transform(e.coordinate, 'EPSG:3857', 'EPSG:4326');
+            let lon = lonlat[0];
+            let lat = lonlat[1];
+
+            let layer = this.layers.layers['Sites'];
+            let view = this.map.getView();
+            let queryLayer = layer['layer'].getSource().getParams()['LAYERS'];
+            let layerSource = layer['layer'].getSource().getGetFeatureInfoUrl(
+                e.coordinate,
+                view.getResolution(),
+                view.getProjection(),
+                {'INFO_FORMAT': 'application/json'}
+            );
+            layerSource += '&QUERY_LAYERS=' + queryLayer;
+            $.ajax({
+                type: 'POST',
+                url: '/get_feature/',
+                data: {
+                    'layerSource': layerSource
+                },
+                success: function (data) {
+                    let objectData = JSON.parse(data);
+                    let features = objectData['features'];
+                    if (features.length === 0) {
+                        self.showFeature(self.map.getFeaturesAtPixel(e.pixel), lon, lat, e.coordinate);
+                        return;
+                    }
+                    let count = features[0]['properties']['count'];
+                    if (count > 1) {
+                        self.zoomToCoordinates(
+                            e.coordinate,
+                            self.getCurrentZoom() + 2
+                        );
+                    } else if (count === 1) {
+                        $.ajax({
+                            url: '/api/get-site-by-coord/?lon=' + lon + '&lat=' + lat + '&radius=10',
+                            success: function (data) {
+                                if (data.length > 0) {
+                                    Shared.Dispatcher.trigger('siteDetail:show', data[0]['id'], data[0]['name']);
+                                }
+                            }
+                        });
+                    } else {
+                        self.showFeature(self.map.getFeaturesAtPixel(e.pixel), lon, lat, e.coordinate);
+                    }
+                }
+            });
+
+        },
+        showFeature: function (features, lon, lat, coordinate) {
+            let featuresClickedResponseData = [];
+            let self = this;
             // Point of interest flag
-            var featuresClickedResponseData = [];
             var poiFound = false;
             var featuresData = '';
+
             if (features) {
                 $.each(features, function (index, feature) {
                     var geometry = feature.getGeometry();
@@ -201,20 +259,14 @@ define([
                         }
                     }
                 });
-
             }
-
-            // Get lat and long map
-            var lonlat = ol.proj.transform(e.coordinate, 'EPSG:3857', 'EPSG:4326');
-            var lon = lonlat[0];
-            var lat = lonlat[1];
 
             if (self.uploadDataState && !poiFound) {
                 // Show modal upload if in upload mode
                 self.mapControlPanel.showUploadDataModal(lon, lat, featuresData);
             } else if (!self.uploadDataState && !poiFound) {
                 // Show feature info
-                Shared.Dispatcher.trigger('layers:showFeatureInfo', e.coordinate)
+                Shared.Dispatcher.trigger('layers:showFeatureInfo', coordinate)
             }
         },
         featureClicked: function (feature, uploadDataState) {
@@ -225,8 +277,8 @@ define([
 
                     this.zoomToCoordinates(
                         feature.getGeometry().getCoordinates(),
-                        this.getCurrentZoom()+2
-                        );
+                        this.getCurrentZoom() + 2
+                    );
                 } else {
                     var _properties = properties['features'][0].getProperties();
                     Shared.Dispatcher.trigger('locationSite-' + _properties.id + ':clicked');
@@ -284,7 +336,7 @@ define([
             $mapLegend.show();
             this.$mapLegendWrapper.attr('data-original-title', 'Click to hide legends <br/>Drag to move legends').tooltip('hide');
 
-            if(showTooltip) {
+            if (showTooltip) {
                 this.$mapLegendWrapper.tooltip('show');
             }
         },
@@ -302,7 +354,7 @@ define([
             $mapLegend.hide();
             this.$mapLegendWrapper.attr('data-original-title', 'Show legends').tooltip('hide');
 
-            if(showTooltip) {
+            if (showTooltip) {
                 this.$mapLegendWrapper.tooltip('show');
             }
         },
@@ -373,11 +425,44 @@ define([
                 }
             });
 
+            this.map.getLayers().forEach(function (layer) {
+                try {
+                    var source = layer.getSource();
+                    if (source instanceof ol.source.TileImage) {
+                        source.on('tileloadstart', function () {
+                            ++self.numInFlightTiles
+                        });
+                        source.on('tileloadend', function () {
+                            --self.numInFlightTiles
+                        });
+                    }
+                } catch (err) {
+                }
+            });
+
+            this.map.on('postrender', function (evt) {
+                if (!evt.frameState)
+                    return;
+
+                var numHeldTiles = 0;
+                var wanted = evt.frameState.wantedTiles;
+                for (var layer in wanted)
+                    if (wanted.hasOwnProperty(layer))
+                        numHeldTiles += Object.keys(wanted[layer]).length;
+
+                var ready = self.numInFlightTiles === 0 && numHeldTiles === 0;
+                if (self.mapIsReady !== ready)
+                    self.mapIsReady = ready;
+            });
+
             return this;
         },
         mapMoved: function () {
-            var self = this;
-            self.fetchingRecords();
+            let self = this;
+            let administrative = self.checkAdministrativeLevel();
+            if (administrative !== 'detail') {
+                this.layers.changeLayerAdministrative(administrative);
+            }
         },
         loadMap: function () {
             var self = this;
@@ -421,7 +506,6 @@ define([
             });
             this.map.addOverlay(this.popup);
             this.layers.addLayersToMap(this.map);
-            this.startOnHoverListener();
             this.initExtent = this.getCurrentBbox();
         },
         reloadXHR: function () {
@@ -429,53 +513,6 @@ define([
             this.clusterCollection.administrative = null;
             this.fetchingRecords();
             $('#fetching-error .call-administrator').show();
-        },
-        fetchingStart: function () {
-            Shared.CurrentState.FETCH_CLUSTERS = true;
-            $('#fetching-error').hide();
-            $('#loading-warning').show();
-            if (this.fetchXhr) {
-                this.fetchXhr.abort();
-            }
-            this.mapInteractionEnabled = false;
-            this.map.getInteractions().forEach(function (interaction) {
-                interaction.setActive(false);
-            });
-            if (this.layers.biodiversitySource) {
-                this.layers.biodiversitySource.clear();
-            }
-            if (this.layers.locationSiteClusterSource) {
-                this.layers.locationSiteClusterSource.clear();
-            }
-        },
-        fetchingFinish: function () {
-            Shared.CurrentState.FETCH_CLUSTERS = false;
-            this.fetchingReset();
-            this.mapInteractionEnabled = true;
-            this.map.getInteractions().forEach(function (interaction) {
-                interaction.setActive(true);
-            });
-            if (this.layers.biodiversitySource) {
-                this.layers.biodiversitySource.clear();
-            }
-        },
-        fetchingError: function (err) {
-            if (err['textStatus'] !== "abort") {
-                $('#fetching-error').show();
-                $('#loading-warning').hide();
-            }
-            this.mapInteractionEnabled = true;
-            this.map.getInteractions().forEach(function (interaction) {
-                interaction.setActive(true);
-            });
-        },
-        fetchingReset: function () {
-            $('#fetching-error').hide();
-            $('#loading-warning').hide();
-            $('#fetching-error .call-administrator').hide();
-            if (this.layers.administrativeBoundarySource) {
-                this.layers.administrativeBoundarySource.clear();
-            }
         },
         checkAdministrativeLevel: function () {
             var self = this;
@@ -489,86 +526,30 @@ define([
             });
             return administrative;
         },
+        resetAdministrativeLayers: function () {
+            var administrative = this.checkAdministrativeLevel();
+            if (administrative !== 'detail') {
+                if (administrative === this.clusterCollection.administrative) {
+                    return
+                }
+                this.layers.changeLayerAdministrative(administrative);
+            } else {
+                this.clusterCollection.administrative = null;
+            }
+        },
         fetchingRecords: function () {
             // get records based on administration
             var self = this;
+            return;
             if (!this.layers.isBiodiversityLayerLoaded()) {
                 return
             }
             self.updateClusterBiologicalCollectionZoomExt();
-            if (!this.clusterBiologicalCollection.isActive()) {
-                var administrative = this.checkAdministrativeLevel();
-                if (administrative !== 'detail') {
-                    var zoomLevel = this.getCurrentZoom();
-
-                    if (administrative === this.clusterCollection.administrative) {
-                        return
-                    }
-                    this.fetchingReset();
-                    // generate boundary
-                    this.layers.changeLayerAdministrative(administrative);
-                    // if layer is shows
-                    if (!this.layers.isBiodiversityLayerShow()) {
-                        return;
-                    }
-
-                    this.previousZoom = zoomLevel;
-                    this.clusterCollection.updateUrl(administrative);
-                    if (this.clusterCollection.getCache()) {
-                        this.layers.biodiversitySource.clear();
-                        this.clusterCollection.applyCache();
-                    } else {
-                        this.fetchingStart();
-                        this.fetchXhr = this.clusterCollection.fetch({
-                            success: function () {
-                                self.fetchingFinish();
-                                self.clusterCollection.renderCollection()
-                            }, error: function (xhr, text_status, error_thrown) {
-                                self.fetchingError(error_thrown);
-                            }
-                        });
-                    }
-                } else {
-                    // if layer is shows
-                    if (!this.layers.isBiodiversityLayerShow()) {
-                        return;
-                    }
-                    this.previousZoom = -1;
-                    this.clusterCollection.administrative = null;
-                    this.fetchingReset();
-                    this.fetchingStart();
-                    this.locationSiteCollection.updateUrl(
-                        this.getCurrentBbox(), this.getCurrentZoom());
-                    this.fetchXhr = this.locationSiteCollection.fetch({
-                        success: function () {
-                            self.fetchingFinish();
-                            self.locationSiteCollection.renderCollection()
-                        }, error: function (xhr, text_status, error_thrown) {
-                            self.fetchingError(error_thrown);
-                        }
-                    });
-                }
-            } else {
-                // if layer is shows
-                if (!this.layers.isBiodiversityLayerShow()) {
-                    return;
-                }
-            }
         },
         updateClusterBiologicalCollectionTaxonID: function (taxonID, taxonName) {
             this.closeHighlight();
             if (!this.sidePanelView.isSidePanelOpen() && !this.mapControlPanel.searchView.searchPanel.isPanelOpen()) {
                 return
-            }
-            this.clusterBiologicalCollection.filterClustersByTaxon(taxonID, taxonName);
-            if (!this.clusterBiologicalCollection.isActive()) {
-                this.clusterCollection.administrative = null;
-                this.previousZoom = -1;
-                this.fetchingRecords();
-            } else {
-                this.clearAllLayers();
-                var zoomToExtent = true;
-                this.clusterBiologicalCollection.refetchClusters(zoomToExtent);
             }
         },
         updateClusterBiologicalCollectionZoomExt: function () {
@@ -576,10 +557,16 @@ define([
                 this.getCurrentZoom(), this.getCurrentBbox());
         },
         addBiodiversityFeatures: function (features) {
-            this.layers.biodiversitySource.addFeatures(features);
+            // this.layers.biodiversitySource.addFeatures(features);
         },
         addLocationSiteClusterFeatures: function (features) {
             this.layers.locationSiteClusterSource.addFeatures(features);
+        },
+        isAllLayersReady: function () {
+            if (this.layers.locationSiteClusterSource && this.layers.highlightVectorSource && this.layers.highlightPinnedVectorSource) {
+                return true;
+            }
+            return false;
         },
         switchHighlight: function (features, ignoreZoom) {
             var self = this;
@@ -643,25 +630,6 @@ define([
                 this.layers.highlightPinnedVectorSource.clear();
             }
         },
-        startOnHoverListener: function () {
-            var that = this;
-            this.pointerMoveListener = this.map.on('pointermove', function (e) {
-                var pixel = that.map.getEventPixel(e.originalEvent);
-                var hit = that.map.hasFeatureAtPixel(pixel);
-                if (that.uploadDataState) {
-                    $('#' + that.map.getTarget()).find('canvas').css('cursor', 'pointer');
-                } else if (hit) {
-                    that.map.forEachFeatureAtPixel(pixel,
-                        function (feature, layer) {
-                            if (feature.getGeometry().getType() == 'Point') {
-                                $('#' + that.map.getTarget()).find('canvas').css('cursor', 'pointer');
-                            }
-                        })
-                } else {
-                    $('#' + that.map.getTarget()).find('canvas').css('cursor', 'move');
-                }
-            });
-        },
         showInfoPopup: function () {
             if (!hideBimsInfo && bimsInfoContent) {
                 $('#general-info-modal').fadeIn()
@@ -678,13 +646,31 @@ define([
             }
             this.zoomToCoordinates(ol.proj.fromLonLat(center), this.initZoom);
         },
-        clearAllLayers: function () {
-            this.layers.biodiversitySource.clear();
-            this.layers.locationSiteClusterSource.clear();
+        updateBiodiversityLayerParams: function (query) {
+            query = query.replaceAll(',', '\\,');
+            query = query.replaceAll(';', '\\;');
+            let newParams = {
+                layers: locationSiteGeoserverLayer,
+                format: 'image/png',
+                viewparams: 'where:"' + query + '"'
+            };
+            this.layers.biodiversitySource.updateParams(newParams);
         },
-        refetchRecords: function () {
-            this.zoomToDefault();
-            this.fetchingRecords();
+        clearAllLayers: function () {
+            let newParams = {
+                layers: locationSiteGeoserverLayer,
+                format: 'image/png',
+                viewparams: 'where:' + emptyWMSSiteParameter
+            };
+            this.layers.biodiversitySource.updateParams(newParams);
+        },
+        resetSitesLayer: function () {
+            let newParams = {
+                layers: locationSiteGeoserverLayer,
+                format: 'image/png',
+                viewparams: 'where:' + defaultWMSSiteParameters
+            };
+            this.layers.biodiversitySource.updateParams(newParams);
         },
         showTaxonDetailedDashboard: function (data) {
             this.taxonDetailDashboard.show(data);
@@ -695,6 +681,69 @@ define([
         closeDetailedDashboard: function () {
             this.taxonDetailDashboard.closeDashboard();
             this.siteDetailedDashboard.closeDashboard();
+        },
+        whenMapIsReady: function (callback) {
+            var self = this;
+            if (this.mapIsReady)
+                callback();
+            else {
+                setTimeout(function () {
+                    self.map.once('change:ready', self.whenMapIsReady.bind(null, callback));
+                    self.whenMapIsReady(callback);
+                }, 100)
+            }
+        },
+        downloadMap: function () {
+            var that = this;
+            var downloadMap = true;
+
+            that.map.once('postcompose', function (event) {
+                var canvas = event.context.canvas;
+                try {
+                    canvas.toBlob(function (blob) {
+                    })
+                }
+                catch (error) {
+                    $('#error-modal').modal('show');
+                    downloadMap = false
+                }
+            });
+            that.map.renderSync();
+
+            if (downloadMap) {
+                $('#ripple-loading').show();
+                $('.map-control-panel').hide();
+                $('.zoom-control').hide();
+                $('.print-map-control').addClass('control-panel-selected');
+                that.whenMapIsReady(function () {
+                    var canvas = document.getElementsByClassName('map-wrapper');
+                    var $mapWrapper = $('.map-wrapper');
+                    var divHeight = $mapWrapper.height();
+                    var divWidth = $mapWrapper.width();
+                    var ratio = divHeight / divWidth;
+                    html2canvas(canvas, {
+                        useCORS: true,
+                        background: '#FFFFFF',
+                        allowTaint: false,
+                        onrendered: function (canvas) {
+                            var link = document.createElement('a');
+                            link.setAttribute("type", "hidden");
+                            link.href = canvas.toDataURL("image/png");
+                            link.download = 'map.png';
+                            document.body.appendChild(link);
+                            link.click();
+                            link.remove();
+                            $('.zoom-control').show();
+                            $('.map-control-panel').show();
+                            $('#ripple-loading').hide();
+                            $('.print-map-control').removeClass('control-panel-selected');
+                        }
+                    })
+                });
+            }
+        },
+        startTutorial: function() {
+            startIntro();
         }
     })
 });

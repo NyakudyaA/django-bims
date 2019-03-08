@@ -5,7 +5,9 @@ from .dev import *  # noqa
 ALLOWED_HOSTS = ['*',
                  u'0.0.0.0']
 
-ADMINS = ()
+ADMINS = (
+    ('Dimas', 'dimas@kartoza.com'),
+)
 
 # Set debug to True for development
 DEBUG = True
@@ -25,15 +27,6 @@ DATABASES = {
             'NAME': 'gis_test'
         },
     }
-}
-
-HAYSTACK_CONNECTIONS = {
-    'default': {
-        'ENGINE': 'bims.search_backends.fuzzy_elastic_search_engine'
-                  '.FuzzyElasticSearchEngine',
-        'URL': 'http://elasticsearch:9200/',
-        'INDEX_NAME': 'haystack',
-    },
 }
 
 CACHES = {

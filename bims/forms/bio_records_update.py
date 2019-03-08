@@ -13,14 +13,13 @@ class BioRecordsForm(forms.ModelForm):
     class Meta:
         model = BiologicalCollectionRecord
         fields = (
-            'site',
             'original_species_name',
             'category',
             'present',
             'absent',
             'collection_date',
             'notes',
-            'taxon_gbif_id',
+            'taxonomy',
             'ready_for_validation',
         )
 
@@ -37,8 +36,7 @@ class BioRecordsForm(forms.ModelForm):
                 Field('absent', css_class='form-control'),
                 Field('collection_date', css_class='form-control'),
                 Field('notes', css_class='form-control'),
-                Field('taxon_gbif_id', css_class='form-control'),
-                Field('site', css_class='form-control'),
+                Field('taxonomy', css_class='form-control'),
             )
         )
         self.helper.layout = layout

@@ -19,10 +19,7 @@ define(['backbone', 'ol', 'shared', 'underscore', 'jquery', 'chartJs', 'fileSave
             'click #export-taxasite-map': 'exportTaxasiteMap',
             'click .download-taxa-records-timeline': 'downloadTaxaRecordsTimeline'
         },
-        apiParameters: _.template("?taxon=<%= taxon %>&search=<%= search %>&siteId=<%= siteId %>" +
-            "&collector=<%= collector %>&category=<%= category %>" +
-            "&yearFrom=<%= yearFrom %>&yearTo=<%= yearTo %>&months=<%= months %>&boundary=<%= boundary %>&userBoundary=<%= userBoundary %>" +
-            "&referenceCategory=<%= referenceCategory %>&reference=<%= reference %>"),
+        apiParameters: _.template(Shared.SearchURLParametersTemplate),
         initialize: function () {
             this.$el.hide();
         },
@@ -40,30 +37,54 @@ define(['backbone', 'ol', 'shared', 'underscore', 'jquery', 'chartJs', 'fileSave
             this.taxaRecordsTimelineGraphCanvas = this.taxaRecordsTimelineGraph[0].getContext('2d');
             this.recordsTable = this.$el.find('.records-table');
             this.recordsAreaTable = this.$el.find('.records-area-table');
-            this.siteGeoPoints = {};
             this.mapTaxaSite = null;
-            this.taxaVectorLayer = null;
-            this.taxaVectorSource = null;
+            this.csvDownloadsUrl = '/download-csv-taxa-records/';
+            let biodiversityLayersOptions = {
+                url: geoserverPublicUrl + 'wms',
+                params: {
+                    LAYERS: locationSiteGeoserverLayer,
+                    FORMAT: 'image/png8',
+                    viewparams: 'where:' + emptyWMSSiteParameter
+                },
+                ratio: 1,
+                serverType: 'geoserver'
+            };
+            this.siteLayerSource = new ol.source.ImageWMS(biodiversityLayersOptions);
+            this.siteTileLayer = new ol.layer.Image({
+                source: this.siteLayerSource
+            });
             return this;
         },
         show: function (data) {
-            if(this.isOpen) {
+            var self = this;
+            if (this.isOpen) {
                 return false;
             }
             this.isOpen = true;
             this.loadingDashboard.show();
-            this.taxonName = data.taxonName;
-            this.taxonId = data.taxonId;
-            this.siteDetail = data.siteDetail;
-            if (typeof filterParameters !== 'undefined') {
-                this.parameters = filterParameters;
-                this.parameters['taxon'] = this.taxonId;
-            }
-            this.url = '/api/get-bio-records/' + this.apiParameters(this.parameters);
-            this.fetchRecords();
+
             this.$el.show('slide', {
                 direction: 'right'
             }, 300, function () {
+                self.url = '/api/bio-collection-summary/';
+                if (typeof data === 'string') {
+                    self.url += '?' + data;
+                    self.csvDownloadsUrl += '?' + data;
+                } else {
+                    self.taxonName = data.taxonName;
+                    self.taxonId = data.taxonId;
+                    self.siteDetail = data.siteDetail;
+                    if (typeof filterParameters !== 'undefined') {
+                        self.parameters = filterParameters;
+                        self.parameters['taxon'] = self.taxonId;
+                    }
+                    Shared.Router.updateUrl('species-detail/' + self.apiParameters(filterParameters).substr(1), true);
+                    var params = self.apiParameters(self.parameters);
+                    self.csvDownloadsUrl += params;
+                    self.url += params;
+                }
+
+                self.fetchRecords();
             });
         },
         fetchRecords: function () {
@@ -77,12 +98,28 @@ define(['backbone', 'ol', 'shared', 'underscore', 'jquery', 'chartJs', 'fileSave
                 }
             })
         },
+        displayTaxonomyRank: function (taxonomy_rank) {
+            let taxonomySystem = this.$el.find('.taxon-dashboard-detail');
+            $.each(taxonomy_rank, function (rank, name) {
+                taxonomySystem.append(
+                    '<tr>' +
+                    '<td>' + rank + '</td>' +
+                    '<td>' + name + '</td>' +
+                    '</tr>'
+                )
+            });
+        },
         generateDashboard: function (data) {
             var self = this;
             this.dashboardTitleContainer.html(this.taxonName);
+            var gbif_key = data['gbif_id'];
+            var taxonomy_id = data['process_id'];
+            var canonicalName = data['taxon'];
+
+            self.taxonName = canonicalName;
 
             // Set origin
-            var category = data[0]['category'];
+            var category = data['origin'];
             $.each(self.originInfoList.children(), function (key, data) {
                 var $originInfoItem = $(data);
                 if ($originInfoItem.data('value') === category) {
@@ -91,16 +128,19 @@ define(['backbone', 'ol', 'shared', 'underscore', 'jquery', 'chartJs', 'fileSave
             });
 
             // Set endemic
-            var endemic = data[0]['endemism'];
+            var endemic = data['endemism'];
             $.each(this.endemicInfoList.children(), function (key, data) {
                 var $endemicInfoItem = $(data);
+                if (!endemic) {
+                    return true;
+                }
                 if ($endemicInfoItem.data('value') === endemic.toLowerCase()) {
                     $endemicInfoItem.css('background-color', 'rgba(5, 255, 103, 0.28)');
                 }
             });
 
             // Set con status
-            var conservation = data[0]['taxonomy']['iucn_status_name'];
+            var conservation = data['conservation_status'];
             $.each(this.conservationStatusList.children(), function (key, data) {
                 var $conservationStatusItem = $(data);
                 if ($conservationStatusItem.data('value') === conservation) {
@@ -110,17 +150,17 @@ define(['backbone', 'ol', 'shared', 'underscore', 'jquery', 'chartJs', 'fileSave
 
             var overViewTable = _.template($('#taxon-overview-table').html());
             this.overviewTaxaTable.html(overViewTable({
-                id: self.apiParameters(self.parameters),
+                csv_downloads_url: self.csvDownloadsUrl,
                 count: data.length,
-                taxon_class: data[0]['taxonomy']['taxon_class'],
-                gbif_id: data[0]['taxon_gbif_id']
+                taxon_class: data['taxon'],
+                gbif_id: gbif_key
             }));
 
-            var taxonDetailTable = _.template($('#taxon-detail-table').html());
-            this.overviewNameTaxonTable.html(taxonDetailTable(data[0]['taxonomy']));
+            let taxonDetailTable = _.template($('#taxon-detail-table').html());
+            this.overviewNameTaxonTable.html(taxonDetailTable());
 
-            var objectPerDate = self.countObjectPerDateCollection(data);
-            var dataBySite = self.countObjectPerSite(data);
+            let recordsOverTimeData = data['records_over_time_data'];
+            let recordsOverTimeLabels = data['records_over_time_labels'];
             var recordsOptions = {
                 maintainAspectRatio: false,
                 title: {display: true, text: 'Records'},
@@ -128,7 +168,11 @@ define(['backbone', 'ol', 'shared', 'underscore', 'jquery', 'chartJs', 'fileSave
                 scales: {
                     xAxes: [{
                         barPercentage: 0.4,
-                        ticks: {autoSkip: false, maxRotation: 90, minRotation: 90},
+                        ticks: {
+                            autoSkip: false,
+                            maxRotation: 90,
+                            minRotation: 90
+                        },
                         scaleLabel: {display: true, labelString: 'Year'}
                     }],
                     yAxes: [{
@@ -138,32 +182,18 @@ define(['backbone', 'ol', 'shared', 'underscore', 'jquery', 'chartJs', 'fileSave
                 }
             };
 
-            var objectDatasets= [{
-                data: Object.values(objectPerDate[self.objectDataByYear]),
+            var objectDatasets = [{
+                data: recordsOverTimeData,
                 backgroundColor: 'rgba(222, 210, 65, 1)'
             }];
 
             this.taxaRecordsTimelineGraphChart = self.createTimelineGraph(
                 self.taxaRecordsTimelineGraphCanvas,
-                objectPerDate[self.yearsArray],
+                recordsOverTimeLabels,
                 objectDatasets,
                 recordsOptions);
+            this.displayTaxonomyRank(data['taxonomy_rank']);
 
-            var $table = $('<table></table>');
-            for(var key in objectPerDate[self.objectDataByYear]){
-                $table.append('<tr><td>' + key + '</td><td>' + objectPerDate[self.objectDataByYear][key] + '</td></tr>')
-            }
-            self.recordsTable.html($table);
-
-            var $tableArea = $('<table></table>');
-            $tableArea.append('<tr><th>ID</th><th>Site name</th><th>Records</th></tr>')
-            for(var site in dataBySite){
-                if(dataBySite[site]['site_name'] !== undefined) {
-                    $tableArea.append('<tr><td>' + site + '</td><td data-site-id="' + site + '">' + dataBySite[site]['site_name'] + '</td><td>' + dataBySite[site]['count'] + '</td></tr>')
-                }else {
-                    $tableArea.append('<tr><td>' + site + '</td><td data-site-id="'+site+'">' + site + '</td><td>' + dataBySite[site]['count'] + '</td></tr>')
-                }
-            }
             if (!this.mapTaxaSite) {
                 this.mapTaxaSite = new ol.Map({
                     layers: [
@@ -174,62 +204,33 @@ define(['backbone', 'ol', 'shared', 'underscore', 'jquery', 'chartJs', 'fileSave
                     target: 'taxasite-map',
                     view: new ol.View({
                         center: [0, 0],
-                        zoom: 12
+                        zoom: 2
                     })
                 });
+                this.mapTaxaSite.addLayer(this.siteTileLayer);
             }
+
+            let newParams = {
+                layers: locationSiteGeoserverLayer,
+                format: 'image/png',
+                viewparams: 'where:"' + data['sites_raw_query'] + '"'
+            };
+            this.siteLayerSource.updateParams(newParams);
+
+             // Zoom to extent
+            let ext = ol.proj.transformExtent(data['extent'], ol.proj.get('EPSG:4326'), ol.proj.get('EPSG:3857'));
+            this.mapTaxaSite.getView().fit(ext, this.mapTaxaSite.getSize());
+            if (this.mapTaxaSite.getView().getZoom() > 8) {
+                this.mapTaxaSite.getView().setZoom(8);
+            }
+
+            var $tableArea = $('<table class="table"></table>');
+            $tableArea.append('<tr><th>Site name</th><th>Records</th></tr>');
+            $.each(data['records_per_area'], function (index, areaRecord) {
+                $tableArea.append('<tr><td>' + areaRecord['site_name'] + '</td><td>' + areaRecord['count'] + '</td></tr>')
+            });
             self.recordsAreaTable.html($tableArea);
 
-            $.each(data, function (index, value) {
-                var sites = Object.keys(self.siteGeoPoints);
-                if(!sites.includes(value['site'])) {
-                    var center = JSON.parse(value['location']);
-                    self.siteGeoPoints[value['site']] = center['coordinates'];
-                    self.addFeatures(self.siteGeoPoints);
-                }
-            });
-        },
-        countObjectPerDateCollection: function(data) {
-            var yearArray = [];
-            var dataByYear = {};
-            $.each(data, function (key, value) {
-                var collection_year = new Date(value['collection_date']).getFullYear();
-                if($.inArray(collection_year, yearArray) === -1){
-                    yearArray.push(collection_year)
-                }
-            });
-            yearArray.sort();
-
-            $.each(yearArray, function (idx, year) {
-                dataByYear[year] = 0;
-                $.each(data, function (key, value) {
-                    var valueYear = new Date(value['collection_date']).getFullYear();
-                    if(valueYear === year){
-                        dataByYear[year] += 1;
-                    }
-                })
-            });
-
-            var self = this;
-            var results = {};
-            results[self.objectDataByYear] = dataByYear;
-            results[self.yearsArray] = yearArray;
-
-            return results;
-        },
-        countObjectPerSite: function(data) {
-            var dataBySite = {};
-            $.each(data, function (key, value) {
-                if (!dataBySite.hasOwnProperty(value['site'])) {
-                    dataBySite[value['site']] = {
-                        'count': 1,
-                        'site_name': value['site_name']
-                    }
-                } else {
-                    dataBySite[value['site']]['count'] += 1;
-                }
-            });
-            return dataBySite
         },
         clearDashboard: function () {
             $.each(this.originInfoList.children(), function (key, data) {
@@ -248,16 +249,20 @@ define(['backbone', 'ol', 'shared', 'underscore', 'jquery', 'chartJs', 'fileSave
             this.overviewNameTaxonTable.html('');
 
             // Clear canvas
-            if(this.taxaRecordsTimelineGraphChart) {
+            if (this.taxaRecordsTimelineGraphChart) {
                 this.taxaRecordsTimelineGraphChart.destroy();
                 this.taxaRecordsTimelineGraphChart = null;
             }
-
+            if (this.mapTaxaSite) {
+                let newParams = {
+                    layers: locationSiteGeoserverLayer,
+                    format: 'image/png',
+                    viewparams: 'where:' + emptyWMSSiteParameter
+                };
+                this.siteLayerSource.updateParams(newParams);
+            }
             this.recordsTable.html('');
             this.recordsAreaTable.html('');
-            this.siteGeoPoints = {};
-
-            this.taxaVectorSource.clear();
         },
         closeDashboard: function () {
             var self = this;
@@ -271,9 +276,10 @@ define(['backbone', 'ol', 'shared', 'underscore', 'jquery', 'chartJs', 'fileSave
                 self.clearDashboard();
                 self.loadingDashboard.hide();
                 self.dashboardTitleContainer.html('&nbsp;');
+                Shared.Router.clearSearch();
             });
         },
-        createTimelineGraph: function(canvas, labels, dataset, options) {
+        createTimelineGraph: function (canvas, labels, dataset, options) {
             var chart = new ChartJs(canvas, {
                 type: 'bar',
                 data: {
@@ -283,43 +289,6 @@ define(['backbone', 'ol', 'shared', 'underscore', 'jquery', 'chartJs', 'fileSave
                 options: options
             });
             return chart;
-        },
-        addFeatures: function(data) {
-            if(this.taxaVectorLayer){
-                this.mapTaxaSite.removeLayer(this.taxaVectorLayer);
-                this.taxaVectorLayer = null;
-            }
-
-            var iconFeatures=[];
-
-            $.each(data, function (index, value) {
-                var center = ol.proj.transform([value[0], value[1]], 'EPSG:4326', 'EPSG:3857');
-                var iconFeature = new ol.Feature({
-                    geometry: new ol.geom.Point(center)
-                });
-
-                var iconStyle = new ol.style.Style({
-                    image: new ol.style.Icon(({
-                        anchor: [0.5, 46],
-                        anchorXUnits: 'fraction',
-                        anchorYUnits: 'pixels',
-                        opacity: 0.75,
-                        src: '/static/img/map-marker.png'
-                    }))
-                });
-                iconFeature.setStyle(iconStyle);
-                iconFeatures.push(iconFeature);
-            });
-
-            this.taxaVectorSource = new ol.source.Vector({
-                features: iconFeatures
-            });
-
-            this.taxaVectorLayer = new ol.layer.Vector({
-                source: this.taxaVectorSource
-            });
-            this.mapTaxaSite.addLayer(this.taxaVectorLayer);
-            this.mapTaxaSite.getView().fit(this.taxaVectorLayer.getSource().getExtent(), this.mapTaxaSite.getSize());
         },
         exportTaxasiteMap: function () {
             this.mapTaxaSite.once('postcompose', function (event) {
@@ -336,16 +305,26 @@ define(['backbone', 'ol', 'shared', 'underscore', 'jquery', 'chartJs', 'fileSave
         },
         downloadTaxaRecordsTimeline: function () {
             var title = 'taxa-record-timeline';
-            var canvas = this.taxaRecordsTimelineGraph;
-
-            html2canvas(canvas, {
-                onrendered: function (canvas) {
-                    var link = document.createElement('a');
-                    link.href = canvas.toDataURL("image/png").replace("image/png", "image/octet-stream");
-                    link.download = title + '.png';
-                    link.click();
-                }
-            })
+            var canvas = this.taxaRecordsTimelineGraph[0];
+            this.downloadChart(title, canvas);
+        },
+        downloadChart: function (title, graph_canvas) {
+            var img = new Image();
+            var ctx = graph_canvas.getContext('2d');
+            img.src='/static/img/bims-stamp.png';
+            img.onload = function() {
+                ctx.drawImage(img, graph_canvas.scrollWidth - img.width - 5,
+                    graph_canvas.scrollHeight - img.height - 5);
+                canvas = graph_canvas;
+                html2canvas(canvas, {
+                    onrendered: function (canvas) {
+                        var link = document.createElement('a');
+                        link.href = canvas.toDataURL("image/png").replace("image/png", "image/octet-stream");
+                        link.download = title + '.png';
+                        link.click();
+                    }
+                })
+            }
         }
     })
 });

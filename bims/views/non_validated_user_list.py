@@ -44,8 +44,8 @@ class NonValidatedObjectsUserView(LoginRequiredMixin, ListView):
                 BiologicalCollectionRecord.objects.filter(
                     validated=False,
                     owner=user,
-                    taxon_gbif_id__isnull=False
-                ).order_by('original_species_name')
+                    taxonomy__isnull=False
+                ).order_by('-id')
             if filter_name is not None:
                 queryset = queryset.filter(
                     original_species_name__icontains=filter_name)

@@ -6,10 +6,7 @@ define(['backbone', 'ol', 'shared', 'chartJs', 'jquery'], function (Backbone, ol
         siteId: null,
         siteName: null,
         siteDetailData: null,
-        apiParameters: _.template("?taxon=<%= taxon %>&search=<%= search %>&siteId=<%= siteId %>" +
-            "&collector=<%= collector %>&category=<%= category %>" +
-            "&yearFrom=<%= yearFrom %>&yearTo=<%= yearTo %>&months=<%= months %>&boundary=<%= boundary %>&userBoundary=<%= userBoundary %>" +
-            "&referenceCategory=<%= referenceCategory %>&reference=<%= reference %>"),
+        apiParameters: _.template(Shared.SearchURLParametersTemplate),
         months: {
             'january': 1,
             'february': 2,
@@ -83,7 +80,18 @@ define(['backbone', 'ol', 'shared', 'chartJs', 'jquery'], function (Backbone, ol
                          return true;
                      }
 
-                     var isChart = value['name'].toLowerCase().includes('monthly');
+                     if (value['service_registry_values'].length === 0) {
+                         return true;
+                     }
+
+                     // TODO : Change this to check graphable value
+                     var isChart = false;
+                     if (!((typeof chartName == 'undefined') | (typeof chartName == null))) {
+                          isChart = chartName.includes('monthly')
+                     };
+                     if (!((typeof service_registry_key == 'undefined') | (typeof service_registry_key == null)) & (isChart == false)) {
+                        isChart = service_registry_key.toString().toLowerCase().includes('monthly');
+                     };
                      var chartData = [];
 
                      $.each(value['service_registry_values'], function (service_index, service_value) {
@@ -159,8 +167,26 @@ define(['backbone', 'ol', 'shared', 'chartJs', 'jquery'], function (Backbone, ol
             }
 
             // Add detail dashboard button
-            var button = '<button class="btn btn-info open-detailed-site-button"> Open detailed dashboard </button>';
+            var button = `
+                <div class="container-fluid">
+                <button class="btn fbis-button right-panel-button 
+                               open-detailed-site-button">Dashboard</button>`;
             $detailWrapper.append(button);
+
+            if (is_sass_enabled) {
+                var sassDetailedDashboardButton = `
+                    <div class="container-fluid"><a 
+                    href="/sass/dashboard/${this.parameters['siteId']}/${this.apiParameters(this.parameters)}
+                    " class="btn right-panel-button right-panel-last-button 
+                             fbis-button sass-button">SASS Dashboard</a></div>`;
+                var sassButton = `
+                    <div class="container-fluid"><a 
+                    href="/sass/${this.parameters['siteId']}
+                    " class="btn right-panel-button right-panel-last-button 
+                             fbis-button sass-button">SASS +</a></div>`;
+                $detailWrapper.append(sassDetailedDashboardButton);
+                $detailWrapper.append(sassButton);
+            }
 
             return $detailWrapper;
         },
@@ -306,12 +332,12 @@ define(['backbone', 'ol', 'shared', 'chartJs', 'jquery'], function (Backbone, ol
                             template({
                                 common_name: speciesName,
                                 count: speciesValue.count,
-                                taxon_gbif_id: speciesValue.taxon_gbif_id
+                                taxon_gbif_id: speciesValue.taxon_id
                             })
                         );
 
                         // Species clicked
-                        $classWrapper.find('#'+speciesValue.taxon_gbif_id).click(function (e) {
+                        $classWrapper.find('#'+speciesValue.taxon_id).click(function (e) {
                             e.preventDefault();
                             Shared.Dispatcher.trigger('taxonDetail:show',
                                 speciesValue.taxon_id,
@@ -346,15 +372,16 @@ define(['backbone', 'ol', 'shared', 'chartJs', 'jquery'], function (Backbone, ol
             // Render basic information
             var $siteDetailWrapper = $('<div></div>');
             $siteDetailWrapper.append(
-                '<div id="site-detail" class="search-results-wrapper">' +
-                '<div class="search-results-total" data-visibility="false"> ' +
-                '<span class="search-result-title"> SITE DETAILS </span> ' +
-                '<i class="fa fa-angle-down pull-right filter-icon-arrow"></i></div></div>');
-            $siteDetailWrapper.append(
                 '<div id="dashboard-detail" class="search-results-wrapper">' +
                 '<div class="search-results-total" data-visibility="false"> ' +
                 '<span class="search-result-title"> DASHBOARD </span> ' +
                 '<i class="fa fa-angle-down pull-right filter-icon-arrow"></i></div></div>');
+            $siteDetailWrapper.append(
+                '<div id="site-detail" class="search-results-wrapper">' +
+                '<div class="search-results-total" data-visibility="false"> ' +
+                '<span class="search-result-title"> SITE DETAILS </span> ' +
+                '<i class="fa fa-angle-down pull-right filter-icon-arrow"></i></div></div>');
+
             $siteDetailWrapper.append(
                 '<div id="species-list" class="search-results-wrapper">' +
                 '<div class="search-results-total" data-visibility="true"> ' +

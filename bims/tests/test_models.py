@@ -10,6 +10,8 @@ from bims.tests.model_factories import (
     TaxonF,
     IUCNStatusF,
     SurveyF,
+    EndemismF,
+    FbisUUIDF,
 )
 from bims.models.iucn_status import iucn_status_pre_save_handler
 from bims.utils.get_key import get_key
@@ -426,3 +428,88 @@ class TestSurveyCRUD(TestCase):
 
         # check if deleted
         self.assertTrue(model.pk is None)
+
+
+class TestEndemismCRUD(TestCase):
+    """
+    Tests endemism model.
+    """
+    ENDEMISM_DEFAULT_VALUE = 'endemism'
+
+    def setUp(self):
+        """
+        Sets up before each test
+        """
+        self.endemism1 = EndemismF.create(
+            name=self.ENDEMISM_DEFAULT_VALUE
+        )
+        pass
+
+    def test_Survey_create(self):
+        """
+        Tests endemism creation
+        """
+
+        # check if pk exists
+        self.assertTrue(self.endemism1.pk is not None)
+
+        # check if name exists
+        self.assertTrue(self.endemism1.name is not None)
+
+    def test_Survey_read(self):
+        """
+        Survey endemism model read
+        """
+        self.assertTrue(
+            self.endemism1.name == self.ENDEMISM_DEFAULT_VALUE)
+
+    def test_Survey_update(self):
+        """
+        Tests survey model update
+        """
+        new_data = {
+            'name': 'endemism new value'
+        }
+        self.endemism1.__dict__.update(new_data)
+        self.endemism1.save()
+
+        # check if updated
+        for key, val in new_data.items():
+            self.assertEqual(self.endemism1.__dict__.get(key), val)
+
+    def test_Survey_delete(self):
+        """
+        Tests survey model delete
+        """
+        model = EndemismF.create()
+        model.delete()
+
+        # check if deleted
+        self.assertTrue(model.pk is None)
+
+
+class TestFbisUUID(TestCase):
+    """
+    Tests FbisUUID model.
+    """
+
+    def setUp(self):
+        """
+        Sets up before each test
+        """
+        pass
+
+    def test_create(self):
+        """
+        Tests FbisUUID creation
+        """
+        from django.contrib.contenttypes.models import ContentType
+        from bims.models.endemism import Endemism
+
+        endemism = EndemismF.create(name='test')
+        ctype = ContentType.objects.get_for_model(Endemism)
+        fbis_uuid = FbisUUIDF.create(
+            content_type=ctype,
+            object_id=endemism.id
+        )
+        self.assertEqual(fbis_uuid.content_object.id, endemism.id)

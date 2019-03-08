@@ -7,7 +7,9 @@ from bims.api_views.boundary import (
 from bims.api_views.location_site import (
     LocationSiteList,
     LocationSiteDetail,
-    LocationSiteClusterList
+    LocationSiteClusterList,
+    LocationSitesSummary,
+    LocationSitesCoordinate
 )
 from bims.api_views.location_type import (
     LocationTypeAllowedGeometryDetail
@@ -15,10 +17,13 @@ from bims.api_views.location_type import (
 from bims.api_views.non_biodiversity_layer import (
     NonBiodiversityLayerList
 )
-from bims.api_views.taxon import TaxonDetail
+from bims.api_views.taxon import (
+    TaxonDetail,
+    TaxonSimpleList,
+    TaxonForDocument,
+)
 from bims.api_views.cluster import ClusterList
 from bims.api_views.collection import (
-    GetCollectionExtent,
     CollectionDownloader,
     ClusterCollection
 )
@@ -27,11 +32,13 @@ from bims.api_views.reference_category import ReferenceCategoryList
 from bims.api_views.category_filter import CategoryList
 from bims.api_views.reference_list import ReferenceList, ReferenceEntryList
 from bims.api_views.search import SearchObjects
+from bims.api_views.search_version_2 import SearchVersion2APIView
 from bims.api_views.validate_object import ValidateObject
 from bims.api_views.reject_collection_data import RejectCollectionData
 from bims.api_views.get_biorecord import (
     GetBioRecordDetail,
-    GetBioRecords
+    GetBioRecords,
+    BioCollectionSummary
 )
 from bims.api_views.non_validated_record import GetNonValidatedRecords
 from bims.api_views.hide_popup_info_user import HidePopupInfoUser
@@ -39,6 +46,16 @@ from bims.api_views.send_notification_to_validator import \
     SendNotificationValidation
 from bims.views.locate import filter_farm_ids_view, get_farm_view
 from bims.api_views.user_boundary import UserBoundaryList
+from bims.api_views.documents import DocumentList
+from bims.api_views.module_summary import ModuleSummary
+from bims.api_views.endemism import EndemismList
+from bims.api_views.site_search_result import SiteSearchResult
+from bims.api_views.site_by_coord import SiteByCoord
+from bims.api_views.river_catchment import (
+    RiverCatchmentList,
+    RiverCatchmentTaxonList
+)
+from bims.api_views.spatial_scale_filter import SpatialScaleFilterList
 
 urlpatterns = [
     url(r'^location-type/(?P<pk>[0-9]+)/allowed-geometry/$',
@@ -48,18 +65,28 @@ urlpatterns = [
     url(r'^location-site-detail/$',
         LocationSiteDetail.as_view(),
         name='location-site-detail'),
+    url(r'^location-sites-summary/$',
+        LocationSitesSummary.as_view(),
+        name='location-sites-summary'),
+    url(r'^location-sites-coordinate/$',
+        LocationSitesCoordinate.as_view(),
+        name='location-sites-coordinate'),
     url(r'^taxon/(?P<pk>[0-9]+)/$',
         TaxonDetail.as_view()),
+    url(r'^list-taxon/$',
+        TaxonSimpleList.as_view()),
+    url(r'^list-taxon-for-document/(?P<docid>[0-9]+)/$',
+        TaxonForDocument.as_view()),
     url(r'^cluster/(?P<administrative_level>\w+)/$',
         ClusterList.as_view()),
-    url(r'^collection/extent/$',
-        GetCollectionExtent.as_view()),
     url(r'^collection/cluster/$',
         ClusterCollection.as_view()),
     url(r'^collection/download/$',
         CollectionDownloader.as_view()),
     url(r'^search/$',
         SearchObjects.as_view(), name='search-api'),
+    url(r'^search-v2/$',
+        SearchVersion2APIView.as_view(), name='search-api-version-2'),
     url(r'^boundary/geojson$',
         BoundaryGeojson.as_view(), name='boundary-geojson'),
     url(r'^list-boundary/$',
@@ -74,6 +101,8 @@ urlpatterns = [
         ReferenceList.as_view(), name='list-reference'),
     url(r'^list-entry-reference/$',
         ReferenceEntryList.as_view(), name='list-entry-reference'),
+    url(r'^list-documents/$',
+        DocumentList.as_view(), name='list-documents'),
     url(r'^list-non-biodiversity/$',
         NonBiodiversityLayerList.as_view(),
         name='list-non-biodiversity-layer'),
@@ -85,6 +114,8 @@ urlpatterns = [
         GetBioRecordDetail.as_view(), name='get-bio-object'),
     url(r'^get-bio-records/$',
         GetBioRecords.as_view(), name='get-bio-records'),
+    url(r'^bio-collection-summary/$',
+        BioCollectionSummary.as_view(), name='bio-collection-summary'),
     url(r'^get-unvalidated-records/$',
         GetNonValidatedRecords.as_view(), name='get-unvalidated-records'),
     url(r'^send-email-validation/$',
@@ -98,4 +129,24 @@ urlpatterns = [
     url(r'^list-reference-category/$',
         ReferenceCategoryList.as_view(), name='list-reference-category'),
     url(r'^docs/', include_docs_urls(title='BIMS API')),
+    url(r'^module-summary/$',
+        ModuleSummary.as_view(),
+        name='module-summary'),
+    url(r'^endemism-list/$',
+        EndemismList.as_view(),
+        name='endemism-list'),
+    url(r'^river-catchment-list/$',
+        RiverCatchmentList.as_view(),
+        name='river-catchment-list'),
+    url(r'^spatial-scale-filter-list/$',
+        SpatialScaleFilterList.as_view(),
+        name='spatial-scale-filter-list'),
+    url(r'^site-search-result/$',
+        SiteSearchResult.as_view(),
+        name='site-search-result'),
+    url(r'^get-site-by-coord/$',
+        SiteByCoord.as_view(), name='get-site-by-coord'),
+    url(r'^river-catchment-taxon-list/$',
+        RiverCatchmentTaxonList.as_view(),
+        name='river-catchment-taxon-list'),
 ]
