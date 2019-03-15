@@ -490,8 +490,8 @@ define([
                 view: new ol.View({
                     center: ol.proj.fromLonLat(center),
                     zoom: this.initZoom,
-                    minZoom: 5,
-                    extent: [579700.2488501729, -4540000.22437294, 5275991.266691402, -2101353.2739626765]
+                    minZoom: 6,
+                    extent: [1620409.200483, -4184542.751112, 3878425.214698, -2488405.140434]
                 }),
                 controls: ol.control.defaults({
                     zoom: false
