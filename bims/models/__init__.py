@@ -16,3 +16,16 @@ from bims.models.non_biodiversity_layer import *  # noqa
 from bims.models.tracking import *  # noqa
 from bims.models.user_boundary import *  # noqa
 from bims.models.search_process import *  # noqa
+from bims.models.validation import *  # noqa
+from bims.models.reference_link import *  # noqa
+from bims.models.endemism import *  # noqa
+from bims.models.taxonomy import *  # noqa
+from bims.models.taxon_group import *  # noqa
+from bims.models.vernacular_name import *  # noqa
+from bims.models.river_catchment import *  # noqa
+from bims.models.fbis_uuid import *  # noqa
+from bims.models.biotope import *  # noqa
+from bims.models.data_source import *  # noqa
+from bims.models.spatial_scale import *  # noqa
+from bims.models.spatial_scale_group import *  # noqa
+from bims.models.sampling_method import *  # noqa

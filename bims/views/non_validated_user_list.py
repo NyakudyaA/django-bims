@@ -42,8 +42,10 @@ class NonValidatedObjectsUserView(LoginRequiredMixin, ListView):
         if self.queryset is None:
             queryset = \
                 BiologicalCollectionRecord.objects.filter(
-                    validated=False, owner=user
-                ).order_by('original_species_name')
+                    validated=False,
+                    owner=user,
+                    taxonomy__isnull=False
+                ).order_by('-id')
             if filter_name is not None:
                 queryset = queryset.filter(
                     original_species_name__icontains=filter_name)

@@ -12,7 +12,9 @@ from bims.models import (
     LocationType,
     Boundary,
     BoundaryType,
+    ReferenceLink
 )
+from td_biblio.models import Entry
 from bims.models.location_site import (
     location_site_post_save_handler
 )
@@ -39,8 +41,9 @@ class CollectionUploadView(View, LoginRequiredMixin):
             lat = request.POST['lat']
             lon = request.POST['lon']
             custodian = request.POST['ud_custodian']
+            references = request.POST['ud_references']
 
-            if module != 'base':
+            if module != 'base' and module:
                 # Find model
                 app_label, model_name = module.split('.')
                 collection_model = apps.get_model(
@@ -93,9 +96,9 @@ class CollectionUploadView(View, LoginRequiredMixin):
                     original_species_name=species_name
             )
 
-            taxon_gbif = None
+            taxonomy = None
             if existed_collections:
-                taxon_gbif = existed_collections[0].taxon_gbif_id
+                taxonomy = existed_collections[0].taxonomy
 
             # Optional fields and value
             optional_records = {}
@@ -112,10 +115,24 @@ class CollectionUploadView(View, LoginRequiredMixin):
                             collection_date, '%m/%d/%Y'),
                     collector=collector,
                     notes=notes,
-                    taxon_gbif_id=taxon_gbif,
+                    taxonomy=taxonomy,
                     owner=self.request.user,
                     **optional_records
                 )
+
+            if references:
+                references = references.split(',')
+                for reference in references:
+                    try:
+                        entry = Entry.objects.get(id=reference)
+                        ref_link, created = ReferenceLink.\
+                            objects.\
+                            get_or_create(
+                                reference=entry,
+                                collection_record=collection_record
+                            )
+                    except Entry.DoesNotExist:
+                        pass
 
             # reconnect post save handler of location sites
             signals.post_save.connect(

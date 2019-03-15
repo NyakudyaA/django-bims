@@ -1,7 +1,14 @@
 # coding: utf-8
+import requests
 from requests.exceptions import HTTPError
 from pygbif import species
-from bims.models import Taxon, TaxonomyField
+from bims.models import (
+    Taxon,
+    TaxonomyField
+)
+from bims.models.taxonomy import Taxonomy
+from bims.models.vernacular_name import VernacularName
+from bims.enums import TaxonomicRank, TaxonomicStatus
 
 
 def update_taxa():
@@ -22,25 +29,83 @@ def update_taxa():
             print(e)
 
 
-def find_species(original_species_name):
+def get_species(gbif_id):
+    """
+    Get species by gbif id
+    :param gbif_id: gbif id
+    :return: species dictionary
+    """
+    api_url = 'http://api.gbif.org/v1/species/' + str(gbif_id)
+    try:
+        response = requests.get(api_url)
+        json_result = response.json()
+        return json_result
+    except (HTTPError, KeyError) as e:
+        print(e)
+        return None
+
+
+def get_vernacular_names(species_id):
+    """
+    Get vernacular names from species id
+    :param species_id: taxonomy id
+    :return: array of vernacular name
+    """
+    api_url = 'http://api.gbif.org/v1/species/%s/vernacularNames' % (
+        str(species_id)
+    )
+    try:
+        response = requests.get(api_url)
+        json_result = response.json()
+        return json_result
+    except (HTTPError, KeyError) as e:
+        print(e)
+        return None
+
+
+def get_children(key):
+    """
+    Lists all direct child usages for a name usage
+    :return: list of species
+    """
+    api_url = 'http://api.gbif.org/v1/species/{key}/children'.format(
+        key=key
+    )
+    try:
+        response = requests.get(api_url)
+        json_response = response.json()
+        if json_response['results']:
+            return json_response['results']
+        return None
+    except (HTTPError, KeyError) as e:
+        print(e)
+        return None
+
+
+def find_species(original_species_name, rank=None):
     """
     Find species from gbif with lookup query.
     :param original_species_name: the name of species we want to find
+    :param rank: taxonomy rank
     :return: List of species
     """
     print('Find species : %s' % original_species_name)
     try:
         response = species.name_lookup(
             q=original_species_name,
-            limit=3
+            limit=10,
+            rank=rank
         )
         if 'results' in response:
             results = response['results']
             for result in results:
-                key_found = 'nubKey' in result or 'speciesKey' in result
+                rank = result.get('rank', '')
+                rank_key = rank.lower() + 'Key'
+                key_found = (
+                    'nubKey' in result or rank_key in result)
                 if key_found and 'taxonomicStatus' in result:
                     if result['taxonomicStatus'] == 'ACCEPTED' or \
-                            result['taxonomicStatus'] == 'SYNONYM':
+                        result['taxonomicStatus'] == 'SYNONYM':
                         return result
     except HTTPError:
         print('Species not found')
@@ -48,11 +113,40 @@ def find_species(original_species_name):
     return None
 
 
+def search_exact_match(species_name):
+    """
+    Search species detail
+    :param species_name: species name
+    :return: species detail if found
+    """
+    api_url = 'http://api.gbif.org/v1/species/match?name=' + str(species_name)
+    try:
+        response = requests.get(api_url)
+        json_result = response.json()
+        if json_result and 'usageKey' in json_result:
+            key = json_result['usageKey']
+            return key
+        return None
+    except (HTTPError, KeyError) as e:
+        print(e)
+        return None
+
+
 def update_collection_record(collection):
     """
     Update taxon for a collection.
     :param collection: Biological collection record model
     """
+
+    taxonomy = Taxonomy.objects.filter(
+        scientific_name__contains=collection.original_species_name
+    )
+    if taxonomy:
+        print('%s exists in Taxonomy' % collection.original_species_name)
+        collection.taxonomy = taxonomy[0]
+        collection.save()
+        return
+
     result = find_species(collection.original_species_name)
 
     if not result:
@@ -65,10 +159,8 @@ def update_collection_record(collection):
     else:
         return
 
-    taxon, created = Taxon.objects.get_or_create(
-            gbif_id=taxon_key)
-    update_taxonomy_fields(taxon, result)
-    collection.taxon_gbif_id = taxon
+    taxonomy = process_taxon_identifier(taxon_key)
+    collection.taxonomy = taxonomy
     collection.save()
 
 
@@ -100,10 +192,105 @@ def update_taxonomy_fields(taxon, response):
                 for vernacular_name in response['vernacularNames']:
                     if 'vernacularName' in vernacular_name:
                         vernacular_names.append(
-                                vernacular_name['vernacularName']
+                            vernacular_name['vernacularName']
                         )
                 taxon.vernacular_names = vernacular_names
-        except AttributeError:
+        except (AttributeError, KeyError) as e:
+            print(e)
             continue
 
     taxon.save()
+
+
+def process_taxon_identifier(key, fetch_parent=True):
+    """
+    Get taxon detail
+    :param key: gbif key
+    :param fetch_parent: whether need to fetch parent, default to True
+    :return:
+    """
+    # Get taxon
+    print('Get taxon identifier for key : %s' % key)
+
+    try:
+        taxon_identifier = Taxonomy.objects.get(
+            gbif_key=key,
+            scientific_name__isnull=False
+        )
+        if taxon_identifier.parent or taxon_identifier.rank == 'KINGDOM':
+            return taxon_identifier
+    except Taxonomy.DoesNotExist:
+        pass
+
+    detail = get_species(key)
+    taxon_identifier = None
+
+    try:
+        print('Found detail for %s' % detail['scientificName'])
+        taxon_identifier, status = Taxonomy.objects.get_or_create(
+            gbif_key=detail['key'],
+            scientific_name=detail['scientificName'],
+            canonical_name=detail['canonicalName'],
+            taxonomic_status=TaxonomicStatus[
+                detail['taxonomicStatus']].name,
+            rank=TaxonomicRank[
+                detail['rank']].name,
+        )
+        # Get vernacular names
+        vernacular_names = get_vernacular_names(detail['key'])
+        if vernacular_names:
+            print('Found %s vernacular names' % len(
+                vernacular_names['results']))
+            for result in vernacular_names['results']:
+                fields = {}
+                if 'source' in result:
+                    fields['source'] = result['source']
+                if 'language' in result:
+                    fields['language'] = result['language']
+                if 'taxonKey' in result:
+                    fields['taxon_key'] = int(result['taxonKey'])
+                vernacular_name, status = VernacularName.objects.get_or_create(
+                    name=result['vernacularName'],
+                    **fields
+                )
+                taxon_identifier.vernacular_names.add(vernacular_name)
+            taxon_identifier.save()
+
+        if 'parentKey' in detail and fetch_parent:
+            print('Found parent')
+            taxon_identifier.parent = process_taxon_identifier(
+                detail['parentKey']
+            )
+            taxon_identifier.save()
+    except (KeyError, TypeError) as e:
+        print(e)
+        pass
+
+    return taxon_identifier
+
+
+def search_taxon_identifier(search_query, fetch_parent=True):
+    """
+    Search from gbif api, then create taxon identifier
+    :param search_query: string query
+    :param fetch_parent: whether need to fetch parent, default to True
+    :return:
+    """
+    print('Search for %s' % search_query)
+    species_detail = None
+    key = search_exact_match(search_query)
+
+    if not key:
+        species_detail = find_species(search_query)
+        rank = species_detail.get('rank', '')
+        rank_key = rank.lower() + 'Key'
+
+        if rank_key in species_detail:
+            key = species_detail[rank_key]
+        elif 'nubKey' in species_detail:
+            key = species_detail['nubKey']
+
+    if key:
+        species_detail = process_taxon_identifier(key, fetch_parent)
+
+    return species_detail

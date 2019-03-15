@@ -9,7 +9,6 @@ from rest_framework.response import Response
 from bims.api_views.collection import GetCollectionAbstract
 from bims.tasks.search import search_collection
 from bims.models import SearchProcess
-from bims.utils.highlighter import CustomHighlighter
 
 COUNT_LABEL = 'c'
 NAME_LABEL = 'n'
@@ -40,25 +39,22 @@ class SearchObjects(APIView):
             taxon_results,
             site_results):
 
-        highlighter = CustomHighlighter(query_value, max_length=100)
-
         # calculate taxon
         for collection in collection_result:
-            if collection.taxon_gbif not in taxon_results:
-                taxon_results[collection.taxon_gbif] = {
+            if collection.taxonomy not in taxon_results:
+                taxon_results[collection.taxonomy] = {
                     COUNT_LABEL: 1,
                     NAME_LABEL: collection.original_species_name,
-                    HIGHLIGHTER_LABEL: highlighter.highlight(
-                            collection.original_species_name),
+                    HIGHLIGHTER_LABEL: collection.original_species_name,
                     COLLECTION_IDS: [
                         collection.pk
                     ]
                 }
             else:
-                if collection.pk not in taxon_results[collection.taxon_gbif][
+                if collection.pk not in taxon_results[collection.taxonomy][
                     COLLECTION_IDS]:
-                    taxon_results[collection.taxon_gbif][COUNT_LABEL] += 1
-                    taxon_results[collection.taxon_gbif][
+                    taxon_results[collection.taxonomy][COUNT_LABEL] += 1
+                    taxon_results[collection.taxonomy][
                         COLLECTION_IDS].append(collection.pk)
 
             if collection.location_site_id not in site_results:
@@ -81,14 +77,11 @@ class SearchObjects(APIView):
 
     @staticmethod
     def process_sites_search(sites, site_results, query):
-        highlighter = CustomHighlighter(query, max_length=100)
         for site in sites:
             if site.location_site_id not in site_results:
                 site_results[site.location_site_id] = {
                     COUNT_LABEL: 0,
-                    NAME_LABEL: highlighter.highlight(
-                            site.location_site_name
-                    )
+                    NAME_LABEL: site.location_site_name
                 }
             else:
                 continue

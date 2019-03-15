@@ -2,36 +2,42 @@
 """Biological collection record model definition.
 
 """
-
+import json
+import uuid
 from django.conf import settings
 from django.db import models
 from django.dispatch import receiver
 from django.utils import timezone
+from django.contrib.postgres.fields import JSONField
 
 from bims.models.location_site import LocationSite
-from bims.models.taxon import Taxon
-from bims.utils.cluster import (
-    update_cluster_by_collection,
-    update_cluster_by_site
-)
 from bims.utils.gbif import update_collection_record
-from bims.tasks.collection_record import update_search_index
+from bims.models.validation import AbstractValidation
+from bims.models.document_links_mixin import DocumentLinksMixin
+from bims.models.taxonomy import Taxonomy
 
 
-class BiologicalCollectionRecord(models.Model):
+class BiologicalCollectionRecord(
+    AbstractValidation, DocumentLinksMixin):
     """Biological collection model."""
     CATEGORY_CHOICES = (
         ('alien', 'Non-native'),
         ('indigenous', 'Native'),
         ('translocated', 'Translocated')
     )
+
+    HABITAT_CHOICES = (
+        ('euryhaline', 'Euryhaline'),
+        ('freshwater', 'Freshwater'),
+    )
+
     site = models.ForeignKey(
         LocationSite,
         models.CASCADE,
         related_name='biological_collection_record',
     )
     original_species_name = models.CharField(
-        max_length=100,
+        max_length=200,
         blank=True,
         default='',
     )
@@ -39,6 +45,7 @@ class BiologicalCollectionRecord(models.Model):
         max_length=50,
         choices=CATEGORY_CHOICES,
         blank=True,
+        null=True,
     )
     present = models.BooleanField(
         default=True,
@@ -50,52 +57,50 @@ class BiologicalCollectionRecord(models.Model):
         default=timezone.now
     )
     collector = models.CharField(
-        max_length=100,
+        max_length=300,
         blank=True,
         default='',
         verbose_name='collector or observer',
-    )
-    owner = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        models.SET_NULL,
-        blank=True,
-        null=True,
     )
     notes = models.TextField(
         blank=True,
         default='',
     )
-    taxon_gbif_id = models.ForeignKey(
-        Taxon,
+
+    taxonomy = models.ForeignKey(
+        Taxonomy,
         models.SET_NULL,
         null=True,
         blank=True,
-        verbose_name='Taxon GBIF ',
+        verbose_name='Taxonomy'
     )
-    validated = models.BooleanField(
-        default=False,
+
+    collection_habitat = models.CharField(
+        max_length=200,
+        choices=HABITAT_CHOICES,
+        blank=True,
+        default=''
     )
-    ready_for_validation = models.BooleanField(
-        default=False,
-    )
+
     institution_id = models.CharField(
         default=settings.INSTITUTION_ID_DEFAULT,
         help_text='An identifier for the institution having custody of the '
                   'object(s) or information referred to in the record.',
-        max_length=100,
+        max_length=200,
         verbose_name='Custodian',
     )
 
-    endemism = models.CharField(
+    sampling_method_string = models.CharField(
         max_length=50,
         blank=True,
         default=''
     )
 
-    sampling_method = models.CharField(
-        max_length=50,
+    sampling_method = models.ForeignKey(
+        'bims.SamplingMethod',
+        null=True,
         blank=True,
-        default=''
+        on_delete=models.SET_NULL
     )
 
     sampling_effort = models.CharField(
@@ -111,10 +116,51 @@ class BiologicalCollectionRecord(models.Model):
     )
 
     reference_category = models.CharField(
-        max_length=100,
+        max_length=200,
         blank=True,
         default=''
     )
+
+    source_collection = models.CharField(
+        help_text='e.g. SANBI',
+        max_length=200,
+        blank=True,
+        null=True,
+    )
+
+    upstream_id = models.CharField(
+        help_text='Upstream id, e.g. Gbif key',
+        max_length=200,
+        blank=True,
+        null=True
+    )
+
+    uuid = models.UUIDField(
+        help_text='Collection record uuid',
+        max_length=200,
+        null=True,
+    )
+
+    additional_data = JSONField(
+        blank=True,
+        null=True
+    )
+
+    abundance_number = models.IntegerField(
+        blank=True,
+        null=True
+    )
+
+    biotope = models.ForeignKey(
+        'bims.Biotope',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL
+    )
+
+    @property
+    def data_name(self):
+        return self.original_species_name
 
     # noinspection PyClassicStyleClass
     class Meta:
@@ -124,11 +170,36 @@ class BiologicalCollectionRecord(models.Model):
             ('can_upload_csv', 'Can upload CSV'),
             ('can_upload_shapefile', 'Can upload Shapefile'),
             ('can_validate_data', 'Can validate data'),
+            ('can_add_single_occurrence', 'Can add single Occurrence'),
         )
 
     def on_post_save(self):
-        if not self.taxon_gbif_id:
+        if not self.taxonomy:
             update_collection_record(self)
+
+    def save(self, *args, **kwargs):
+        max_allowed = 10
+        attempt = 0
+        is_dictionary = False
+
+        while not is_dictionary and attempt < max_allowed:
+            if not self.additional_data:
+                break
+            if isinstance(self.additional_data, dict):
+                is_dictionary = True
+            else:
+                self.additional_data = json.loads(self.additional_data)
+                attempt += 1
+
+        if not self.uuid:
+            collection_uuid = uuid.uuid4()
+            while BiologicalCollectionRecord.objects.filter(
+                uuid=collection_uuid
+            ).exists():
+                collection_uuid = uuid.uuid4()
+            self.uuid = collection_uuid
+
+        super(BiologicalCollectionRecord, self).save(*args, **kwargs)
 
     def get_children(self):
         rel_objs = [f for f in self._meta.get_fields(include_parents=False)
@@ -145,7 +216,7 @@ class BiologicalCollectionRecord(models.Model):
     def get_children_model():
         rel_objs = [f for f in BiologicalCollectionRecord._meta.get_fields(
             include_parents=False)
-                    if (f.one_to_many or f.one_to_one) and
+                    if f.one_to_one and
                     f.auto_created and not f.concrete]
         related_models = []
         for rel_obj in rel_objs:
@@ -163,6 +234,14 @@ class BiologicalCollectionRecord(models.Model):
             return True
         return False
 
+    def __unicode__(self):
+        label = '{species} - {collector} - {date}'.format(
+            species=self.original_species_name,
+            collector=self.collector,
+            date=self.collection_date
+        )
+        return label
+
 
 @receiver(models.signals.post_save)
 def collection_post_save_handler(sender, instance, **kwargs):
@@ -178,9 +257,7 @@ def collection_post_save_handler(sender, instance, **kwargs):
     )
     instance.on_post_save()
     if instance.is_cluster_generation_applied():
-        update_cluster_by_collection(instance)
         SearchProcess.objects.all().delete()
-        update_search_index.delay()
     models.signals.post_save.connect(
         collection_post_save_handler,
     )
@@ -197,7 +274,3 @@ def cluster_post_delete_handler(sender, instance, using, **kwargs):
     if not issubclass(sender, BiologicalCollectionRecord) and \
             not issubclass(sender, LocationSite):
         return
-    if issubclass(sender, BiologicalCollectionRecord):
-        update_cluster_by_collection(instance)
-    if issubclass(sender, LocationSite):
-        update_cluster_by_site(instance)

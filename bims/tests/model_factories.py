@@ -17,7 +17,12 @@ from bims.models import (
     BiologicalCollectionRecord,
     Boundary,
     BoundaryType,
-    Cluster
+    Cluster,
+    Endemism,
+    Taxonomy,
+    TaxonGroup,
+    FbisUUID,
+    DataSource,
 )
 
 
@@ -34,6 +39,7 @@ class LocationTypeF(factory.django.DjangoModelFactory):
     allowed_geometry = 'POINT'
 
 
+@factory.django.mute_signals(signals.post_save)
 class LocationSiteF(factory.django.DjangoModelFactory):
     """
     Location site factory
@@ -44,8 +50,8 @@ class LocationSiteF(factory.django.DjangoModelFactory):
 
     location_type = factory.SubFactory(LocationTypeF)
     geometry_point = Point(
-        random.uniform(-180.0, 180.0),
-        random.uniform(-90.0, 90.0)
+        random.uniform(-30.0, 30.0),
+        random.uniform(-30.0, 30.0)
     )
 
 
@@ -93,6 +99,20 @@ class SurveyF(factory.django.DjangoModelFactory):
             # A list of groups were passed in, use them
             for site in extracted:
                 self.sites.add(site)
+
+
+class EndemismF(factory.django.DjangoModelFactory):
+    """
+    Endemism factory
+    """
+    class Meta:
+        model = Endemism
+
+    id = factory.Sequence(lambda n: n)
+    name = factory.Sequence(lambda n: 'name %s' % n)
+    description = factory.Sequence(
+        lambda n: 'description %s' % n
+    )
 
 
 class GroupF(factory.DjangoModelFactory):
@@ -158,6 +178,40 @@ class ProfileF(factory.django.DjangoModelFactory):
     other = factory.Sequence(lambda n: "other%s" % n)
 
 
+class TaxonomyF(factory.django.DjangoModelFactory):
+    """
+    Taxon identifier factory
+    """
+    class Meta:
+        model = Taxonomy
+
+    id = factory.Sequence(lambda n: n)
+    scientific_name = factory.Sequence(lambda n: u'Scientific name %s' % n)
+    canonical_name = factory.Sequence(lambda n: u'Canonical name %s' % n)
+
+
+class TaxonGroupF(factory.django.DjangoModelFactory):
+    """
+    Taxon group factory
+    """
+    class Meta:
+        model = TaxonGroup
+
+    id = factory.Sequence(lambda n: n)
+    name = factory.Sequence(lambda n: u'Name %s' % n)
+
+    @factory.post_generation
+    def taxonomies(self, create, extracted, **kwargs):
+        if not create:
+            # Simple build, do nothing.
+            return
+
+        if extracted:
+            # A list of groups were passed in, use them
+            for taxonomy in extracted:
+                self.taxonomies.add(taxonomy)
+
+
 @factory.django.mute_signals(signals.post_save)
 class BiologicalCollectionRecordF(factory.django.DjangoModelFactory):
     """
@@ -166,6 +220,7 @@ class BiologicalCollectionRecordF(factory.django.DjangoModelFactory):
     class Meta:
         model = BiologicalCollectionRecord
 
+    id = factory.Sequence(lambda n: n)
     site = factory.SubFactory(LocationSiteF)
     original_species_name = factory.Sequence(
             lambda n: u'Test original species name %s' % n)
@@ -177,7 +232,7 @@ class BiologicalCollectionRecordF(factory.django.DjangoModelFactory):
     owner = factory.SubFactory(UserF)
     notes = factory.Sequence(
             lambda n: u'Test notes %s' % n)
-    taxon_gbif_id = factory.SubFactory(TaxonF)
+    taxonomy = factory.SubFactory(TaxonomyF)
     validated = True
 
 
@@ -213,3 +268,26 @@ class ClusterF(factory.django.DjangoModelFactory):
     module = factory.Sequence(lambda n: u'Test module %s' % n)
     site_count = 1
     details = ''
+
+
+class FbisUUIDF(factory.django.DjangoModelFactory):
+    """
+    FbisUUID factory
+    """
+    class Meta:
+        model = FbisUUID
+
+    id = factory.Sequence(lambda n: n)
+    uuid = factory.Sequence(lambda n: 'uuid %s' % n)
+    content_type = factory.SubFactory(ContentTypeF)
+
+
+class DataSourceF(factory.django.DjangoModelFactory):
+    """
+    Data source factory
+    """
+    class Meta:
+        model = DataSource
+
+    id = factory.Sequence(lambda n: n)
+    name = factory.Sequence(lambda n: 'data-source %s' % n)

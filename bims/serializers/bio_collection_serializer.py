@@ -14,6 +14,7 @@ class BioCollectionSerializer(serializers.ModelSerializer):
     """
     location = serializers.SerializerMethodField()
     owner = serializers.SerializerMethodField()
+    owner_email = serializers.SerializerMethodField()
     taxonomy = serializers.SerializerMethodField()
     site_name = serializers.SerializerMethodField()
 
@@ -21,10 +22,13 @@ class BioCollectionSerializer(serializers.ModelSerializer):
         return obj.site.name
 
     def get_taxonomy(self, obj):
-        return TaxonSerializer(obj.taxon_gbif_id).data
+        return TaxonSerializer(obj.taxonomy).data
 
     def get_owner(self, obj):
         return obj.owner.username
+
+    def get_owner_email(self, obj):
+        return obj.owner.email
 
     def get_location(self, obj):
         return obj.site.get_geometry().geojson
@@ -48,7 +52,7 @@ class BioCollectionDetailSerializer(serializers.ModelSerializer):
         return 'bio'
 
     def get_taxonomy(self, obj):
-        return TaxonSerializer(obj.taxon_gbif_id).data
+        return TaxonSerializer(obj.taxonomy).data
 
     def get_owner(self, obj):
         if obj.owner:
@@ -80,8 +84,6 @@ class BioCollectionOneRowSerializer(serializers.ModelSerializer):
     location_site = serializers.SerializerMethodField()
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
-    species_name = serializers.SerializerMethodField()
-    notes = serializers.SerializerMethodField()
     origin = serializers.SerializerMethodField()
     date = serializers.SerializerMethodField()
     collector = serializers.SerializerMethodField()
@@ -90,31 +92,18 @@ class BioCollectionOneRowSerializer(serializers.ModelSerializer):
     reference_category = serializers.SerializerMethodField()
 
     def get_taxon_class(self, obj):
-        if obj.taxon_class:
-            return obj.taxon_class
-        else:
-            return ''
+        return obj.taxonomy.class_name
 
     def get_location_site(self, obj):
-        if obj.location_site_name:
-            return obj.location_site_name.encode('utf8')
-        return ''
+        return obj.site.name.encode('utf8')
 
     def get_latitude(self, obj):
-        if obj.location_center:
-            return obj.location_center.x
-        return ''
+        lat = obj.site.get_centroid().x
+        return lat
 
     def get_longitude(self, obj):
-        if obj.location_center:
-            return obj.location_center.y
-        return ''
-
-    def get_species_name(self, obj):
-        return obj.original_species_name.encode('utf8')
-
-    def get_notes(self, obj):
-        return obj.notes.replace(';', '-').encode('utf8')
+        lon = obj.site.get_centroid().y
+        return lon
 
     def get_origin(self, obj):
         category = obj.category
@@ -141,7 +130,7 @@ class BioCollectionOneRowSerializer(serializers.ModelSerializer):
         model = BiologicalCollectionRecord
         fields = [
             'location_site', 'latitude', 'longitude',
-            'species_name', 'notes', 'origin',
+            'original_species_name', 'notes', 'origin',
             'date', 'collector', 'taxon_class',
             'reference', 'reference_category']
 
@@ -199,7 +188,7 @@ class BioCollectionGeojsonSerializer(GeoFeatureModelSerializer):
             BioCollectionGeojsonSerializer, self).to_representation(
             instance)
         try:
-            taxonomy = TaxonExportSerializer(instance.taxon_gbif_id).data
+            taxonomy = TaxonExportSerializer(instance.taxonomy).data
             result['properties'].update(taxonomy)
         except KeyError:
             pass

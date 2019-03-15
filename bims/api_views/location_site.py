@@ -1,16 +1,21 @@
 # coding=utf8
+import json
+import os
 from django.contrib.gis.geos import Polygon
-from django.db.models import Q
+from django.db.models import Q, F, Count
+from django.db.models.functions import ExtractYear
 from django.http import Http404, HttpResponseBadRequest
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.generics import ListAPIView
 from bims.models.location_site import LocationSite
 from bims.models.biological_collection_record import (
     BiologicalCollectionRecord
 )
 from bims.serializers.location_site_serializer import (
     LocationSiteSerializer,
-    LocationSiteClusterSerializer
+    LocationSiteClusterSerializer,
+    LocationSitesCoordinateSerializer
 )
 from bims.serializers.location_site_detail_serializer import \
     LocationSiteDetailSerializer
@@ -21,6 +26,12 @@ from bims.utils.cluster_point import (
     geo_serializer
 )
 from bims.api_views.collection import GetCollectionAbstract
+from bims.utils.search_process import (
+    get_or_create_search_process,
+    create_search_process_file
+)
+from bims.models.search_process import SITES_SUMMARY
+from bims.api_views.search_version_2 import SearchVersion2
 
 
 class LocationSiteList(APIView):
@@ -62,12 +73,14 @@ class LocationSiteDetail(APIView):
         filters = request.GET
 
         # Search collection
-        collection_results, \
-            site_results, \
-            fuzzy_search = GetCollectionAbstract.apply_filter(
-                query_value,
-                filters,
-                ignore_bbox=True)
+        (
+            collection_results,
+            site_results,
+            fuzzy_search
+        ) = GetCollectionAbstract.apply_filter(
+            query_value,
+            filters,
+            ignore_bbox=True)
 
         collection_ids = []
         if collection_results:
@@ -79,8 +92,8 @@ class LocationSiteDetail(APIView):
         }
         location_site = self.get_object(site_id)
         serializer = LocationSiteDetailSerializer(
-                location_site,
-                context=context)
+            location_site,
+            context=context)
         return Response(serializer.data)
 
 
@@ -90,7 +103,7 @@ class LocationSiteClusterList(APIView):
     """
 
     def clustering_process(
-            self, records, zoom, pix_x, pix_y):
+        self, records, zoom, pix_x, pix_y):
         """
         Iterate records and create point clusters
         We use a simple method that for every point, that is not within any
@@ -189,3 +202,110 @@ class LocationSiteClusterList(APIView):
             int(icon_pixel_y)
         )
         return Response(geo_serializer(cluster)['features'])
+
+
+class LocationSitesSummary(APIView):
+    """
+        List cached location site summary based on collection record search.
+    """
+    COUNT = 'count'
+    ORIGIN = 'origin'
+    TOTAL_RECORDS = 'total_records'
+    RECORDS_GRAPH_DATA = 'records_graph_data'
+    RECORDS_OCCURRENCE = 'records_occurrence'
+    CATEGORY_SUMMARY = 'category_summary'
+    TAXONOMY_NAME = 'name'
+
+    def get(self, request):
+        filters = request.GET
+        search = SearchVersion2(filters)
+        collection_results = search.process_search()
+
+        search_process, created = get_or_create_search_process(
+            SITES_SUMMARY,
+            query=request.build_absolute_uri()
+        )
+
+        if search_process.file_path:
+            if os.path.exists(search_process.file_path):
+                try:
+                    raw_data = open(search_process.file_path)
+                    return Response(json.load(raw_data))
+                except ValueError:
+                    pass
+
+        records_occurrence = collection_results.annotate(
+            name=F('taxonomy__scientific_name'),
+            taxon_id=F('taxonomy_id'),
+            origin=F('category')
+        ).values(
+            'taxon_id', 'name', 'origin'
+        ).annotate(
+            count=Count('taxonomy')
+        )
+
+        records_graph_data = collection_results.annotate(
+            year=ExtractYear('collection_date'),
+            origin=F('category')
+        ).values(
+            'year', 'origin'
+        ).annotate(
+            count=Count('year')
+        ).order_by('year')
+
+        category_summary = collection_results.annotate(
+            origin=F('category')
+        ).values_list(
+            'origin'
+        ).annotate(
+            count=Count('category')
+        )
+
+        search_process.set_search_raw_query(
+            search.location_sites_raw_query
+        )
+        search_process.create_view()
+
+        response_data = {
+            self.TOTAL_RECORDS: len(collection_results),
+            self.RECORDS_GRAPH_DATA: list(records_graph_data),
+            self.RECORDS_OCCURRENCE: list(records_occurrence),
+            self.CATEGORY_SUMMARY: dict(category_summary),
+            'process': search_process.process_id,
+            'extent': search.extent(),
+            'sites_raw_query': search_process.process_id
+        }
+
+        file_path = create_search_process_file(
+            data=response_data,
+            search_process=search_process,
+            finished=True
+        )
+        file_data = open(file_path)
+
+        try:
+            return Response(json.load(file_data))
+        except ValueError:
+            return Response(response_data)
+
+
+class LocationSitesCoordinate(ListAPIView):
+    """
+        List paginated location site based on collection record search,
+        there may be duplication.
+    """
+    serializer_class = LocationSitesCoordinateSerializer
+
+    def get_queryset(self):
+        query_value = self.request.GET.get('search')
+        filters = self.request.GET
+        (
+            collection_results,
+            site_results,
+            fuzzy_search
+        ) = GetCollectionAbstract.apply_filter(
+            query_value,
+            filters,
+            ignore_bbox=True,
+            only_site=True)
+        return collection_results

@@ -5,6 +5,7 @@ from pygments import highlight
 from pygments.lexers.data import JsonLexer
 from pygments.formatters.html import HtmlFormatter
 
+from django.contrib.admin import SimpleListFilter
 from django import forms
 from django.utils.safestring import mark_safe
 from django.contrib.gis import admin
@@ -19,6 +20,7 @@ from django.db import models
 from geonode.people.admin import ProfileAdmin
 from geonode.people.forms import ProfileCreationForm
 from geonode.people.models import Profile
+from geonode.upload.models import Upload, UploadFile
 from ordered_model.admin import OrderedModelAdmin
 
 from ckeditor.widgets import CKEditorWidget
@@ -43,6 +45,18 @@ from bims.models import (
     NonBiodiversityLayer,
     UserBoundary,
     SearchProcess,
+    ReferenceLink,
+    Endemism,
+    Taxonomy,
+    TaxonGroup,
+    VernacularName,
+    RiverCatchment,
+    FbisUUID,
+    Biotope,
+    DataSource,
+    SpatialScale,
+    SpatialScaleGroup,
+    SamplingMethod
 )
 
 from bims.conf import TRACK_PAGEVIEWS
@@ -95,6 +109,9 @@ class LocationSiteAdmin(admin.GeoModelAdmin):
     list_filter = (HasLocationContextDocument,)
 
     actions = ['update_location_context', 'delete_location_context']
+
+    def get_readonly_fields(self, request, obj=None):
+        return ['longitude', 'latitude']
 
     def has_location_context(self, obj):
         return bool(obj.location_context_document)
@@ -180,7 +197,13 @@ class IUCNStatusAdmin(admin.ModelAdmin):
 
 
 class TaxonAdmin(admin.ModelAdmin):
-    list_display = ('common_name', 'author', 'iucn_status', 'taxon_class')
+    list_display = (
+        'common_name',
+        'author',
+        'iucn_status',
+        'taxon_class',
+        'endemism'
+    )
 
 
 class BoundaryAdmin(admin.ModelAdmin):
@@ -194,9 +217,30 @@ class ClusterAdmin(admin.ModelAdmin):
     list_filter = ('boundary', 'module')
 
 
+class PermissionContenTypeFilter(SimpleListFilter):
+    title = 'App Label'
+    parameter_name = 'content_type_app_label'
+
+    def lookups(self, request, model_admin):
+        content_types = []
+        app_labels = []
+        all_object = model_admin.model.objects.all()
+        for permission_object in all_object:
+            if permission_object.content_type.app_label not in app_labels:
+                app_labels.append(permission_object.content_type.app_label)
+                content_types.append(permission_object.content_type)
+        return [(c.app_label, c.app_label) for c in content_types]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(content_type__app_label=self.value())
+        else:
+            return queryset.all()
+
+
 class PermissionAdmin(admin.ModelAdmin):
-    list_display = ('name', 'codename')
-    list_filter = ('name', 'codename')
+    list_display = ('content_type', 'name', 'codename')
+    list_filter = ('content_type', 'name', PermissionContenTypeFilter)
 
 
 class CarouselHeaderAdmin(OrderedModelAdmin):
@@ -204,12 +248,13 @@ class CarouselHeaderAdmin(OrderedModelAdmin):
 
 
 class BiologicalCollectionAdmin(admin.ModelAdmin):
-    list_filter = ('taxon_gbif_id', 'collection_date', 'category')
+    list_filter = ('taxonomy', 'collection_date', 'category')
     list_display = (
-        'original_species_name',
+        'taxonomy',
         'category',
         'collection_date',
-        'validated',
+        'is_validated',
+        'is_rejected',
         'collector',
         'owner',
     )
@@ -286,7 +331,7 @@ class CustomUserAdmin(ProfileAdmin):
             'classes': ('wide',),
             'fields': ('username', 'password1', 'password2', 'first_name',
                        'last_name', 'email', 'is_staff', 'is_superuser',
-                       'user_permissions'),
+                       'groups',),
         }),
     )
 
@@ -381,6 +426,115 @@ class PageviewAdmin(admin.ModelAdmin):
     list_display = ('url', 'view_time')
 
 
+class ReferenceLinkAdmin(admin.ModelAdmin):
+
+    list_display = (
+        'collection_record',
+        'reference'
+    )
+
+
+class EndemismAdmin(admin.ModelAdmin):
+
+    list_display = (
+        'name',
+        'description'
+    )
+
+
+class TaxonIdentifierAdmin(admin.ModelAdmin):
+
+    list_display = (
+        'gbif_key',
+        'scientific_name',
+        'rank',
+        'parent'
+    )
+
+    list_filter = (
+        'rank',
+    )
+
+    search_fields = (
+        'scientific_name',
+    )
+
+
+class VernacularNameAdmin(admin.ModelAdmin):
+
+    list_display = (
+        'name',
+        'language',
+        'source'
+    )
+
+
+class RiverCatchmentAdmin(admin.ModelAdmin):
+
+    list_display = (
+        'key',
+        'value',
+        'parent',
+    )
+
+    list_filter = (
+        'key',
+    )
+
+
+class FbisUUIDAdmin(admin.ModelAdmin):
+    list_display = ('uuid', 'content_type', 'content_object')
+    list_filter = ('content_type',)
+    ordering = ('content_type', 'uuid')
+    search_fields = ('uuid', )
+
+
+class SassBiotopeAdmin(admin.ModelAdmin):
+    list_display = (
+        'name',
+        'display_order',
+        'biotope_form'
+    )
+    list_filter = (
+        'name',
+    )
+    ordering = (
+        'name',
+        'display_order',
+        'biotope_form'
+    )
+
+
+class DataSourceAdmin(admin.ModelAdmin):
+    list_display = (
+        'name',
+        'category'
+    )
+
+
+class SpatialScaleAdmin(admin.ModelAdmin):
+    list_display = (
+        'query',
+        'name',
+        'type',
+        'group'
+    )
+
+
+class SpatialScaleGroupAdmin(admin.ModelAdmin):
+    list_display = (
+        'name',
+        'parent'
+    )
+
+
+class SamplingMethodAdmin(admin.ModelAdmin):
+    list_display = (
+        'sampling_method',
+        'effort_measure'
+    )
+
+
 # Re-register GeoNode's Profile page
 admin.site.unregister(Profile)
 admin.site.register(Profile, CustomUserAdmin)
@@ -389,8 +543,11 @@ admin.site.register(LocationSite, LocationSiteAdmin)
 admin.site.register(LocationType)
 admin.site.register(IUCNStatus, IUCNStatusAdmin)
 admin.site.register(Taxon, TaxonAdmin)
+admin.site.register(Endemism, EndemismAdmin)
 admin.site.register(Survey)
 admin.site.register(NonBiodiversityLayer, NonBiodiversityLayerAdmin)
+admin.site.register(Taxonomy, TaxonIdentifierAdmin)
+admin.site.register(TaxonGroup)
 
 admin.site.register(Boundary, BoundaryAdmin)
 admin.site.register(BoundaryType, admin.ModelAdmin)
@@ -409,6 +566,20 @@ admin.site.register(Permission, PermissionAdmin)
 
 admin.site.register(UserBoundary, UserBoundaryAdmin)
 admin.site.register(SearchProcess, SearchProcessAdmin)
+admin.site.register(DataSource, DataSourceAdmin)
+
+admin.site.register(ReferenceLink, ReferenceLinkAdmin)
+admin.site.register(VernacularName, VernacularNameAdmin)
+admin.site.register(RiverCatchment, RiverCatchmentAdmin)
+admin.site.register(FbisUUID, FbisUUIDAdmin)
+admin.site.register(Biotope, SassBiotopeAdmin)
+admin.site.register(SpatialScale, SpatialScaleAdmin)
+admin.site.register(SpatialScaleGroup, SpatialScaleGroupAdmin)
+admin.site.register(SamplingMethod, SamplingMethodAdmin)
+
+# Hide upload files from geonode in admin
+admin.site.unregister(Upload)
+admin.site.unregister(UploadFile)
 
 if TRACK_PAGEVIEWS:
     admin.site.register(Pageview, PageviewAdmin)

@@ -35,36 +35,45 @@ define(['backbone', 'ol', 'shared'], function (Backbone, ol, Shared) {
             var template = _.template($('#species-template').html());
             return template(data);
         },
+        renderResources: function (data) {
+            if(!data.hasOwnProperty('documents')) {
+                return '';
+            }
+            var container = $('<div class="document-container"></div>');
+            $.each(data['documents'], function (key, value) {
+                var div = $('<div class="document-row"></div>');
+                div.append('<img src="'+value['thumbnail_url']+'" height="25px">&nbsp;<a href="'+value['doc_file']+'" download>'+value['title']+'</a>');
+                container.append(div);
+            });
+            return container;
+        },
         showRecords: function (e) {
             e.preventDefault();
             Shared.Dispatcher.trigger('recordsDetail:show', e.data.taxonId, e.data.taxonName, e.data.siteDetail);
         },
-        renderThirdPartyData: function (data) {
+         renderThirdPartyData: function (data) {
             var $thirdPartyData = $('<div>');
 
             var template = _.template($('#third-party-template').html());
-            $thirdPartyData.append(template({
-                taxon_gbif_id: this.gbifId
-            }));
+            $thirdPartyData.append(template({}));
 
             var $wrapper = $thirdPartyData.find('.third-party-wrapper');
             var mediaFound = false;
             var $fetchingInfoDiv = $thirdPartyData.find('.third-party-fetching-info');
 
             $.get({
-                url: 'https://api.gbif.org/v1/occurrence/search?taxonKey='+this.gbifId+'&limit=5',
+                url: 'https://api.gbif.org/v1/occurrence/search?taxonKey='+this.gbifId+'&limit=4',
                 dataType: 'json',
                 success: function (data) {
                     var results = data['results'];
 
-                    var firstColumn = Math.ceil(results.length/2);
-                    var secondColumn = Math.floor(results.length/2);
+                    var $rowWrapper = $('<div id="gbif-images-row" class="row"></div>');
 
-                    var $firstColumnDiv = $('<div class="column">');
-                    var $secondColumnDiv = $('<div class="column">');
-
-                    for (var i=0; i < firstColumn; i++) {
-                        var result = results[i];
+                    var result = {};
+                    for (let result_id in results)
+                    {
+                        var $firstColumnDiv = $('<div class="col-6" "></div>');
+                        result = results[result_id];
                         if(!result.hasOwnProperty('media')) {
                             continue;
                         }
@@ -79,40 +88,58 @@ define(['backbone', 'ol', 'shared'], function (Backbone, ol, Shared) {
                         if(mediaFound) {
                             $fetchingInfoDiv.hide();
                         }
-                        $firstColumnDiv.append('<a href="'+media['references']+'">' +
-                            '<img alt="'+media['rightsHolder']+'" src="'+media['identifier']+'" width="100%"/></a>');
+                        $firstColumnDiv.append('<a target="_blank" href="'+media['references']+'">' +
+                            '<img title="Source: '+media['publisher']+'" alt="'+media['rightsHolder']+'" src="'+media['identifier']+'" width="100%"/></a>');
+                        $rowWrapper.append($firstColumnDiv);
                     }
-                    for (var j=firstColumn; j < firstColumn+secondColumn; j++) {
-                        var resultSecond = results[j];
-                        if(!resultSecond.hasOwnProperty('media')) {
-                            continue;
-                        }
-                        if(resultSecond['media'].length === 0) {
-                            continue;
-                        }
-                        var mediaSecond = resultSecond['media'][0];
-                        if(!mediaSecond.hasOwnProperty('identifier')) {
-                            continue;
-                        }
-                        mediaFound = true;
-                        if(mediaFound) {
-                            $fetchingInfoDiv.hide();
-                        }
-                        $secondColumnDiv.append('<a href="'+mediaSecond['references']+'">' +
-                            '<img alt="'+media['rightsHolder']+'" src="'+mediaSecond['identifier']+'" width="100%"/></a>');
-                    }
-                    $wrapper.append($firstColumnDiv);
-                    $wrapper.append($secondColumnDiv);
-
+                    $wrapper.append($rowWrapper);
                     if(!mediaFound) {
                         $fetchingInfoDiv.html('Media not found');
                     }
-
                 }
             });
 
             return $thirdPartyData;
         },
+
+        renderFBISRPanelBlocks: function(data, stretch_selection = false) {
+            var $detailWrapper = $('<div class="container-fluid" style="padding-left: 0;"></div>');
+            $detailWrapper.append(this.getHtmlForFBISBlocks(data, stretch_selection));
+            return $detailWrapper;
+        },
+
+
+        getHtmlForFBISBlocks: function (new_data_in, stretch_selection) {
+            var result_html = '<div class ="fbis-data-flex-block-row">'
+            var data_in = new_data_in;
+            var data_value = data_in.value;
+            var data_title = data_in.value_title;
+            var keys = data_in.keys;
+            var key = '';
+            var style_class = '';
+            var for_count = 0;
+            for (let key of keys) {
+                for_count += 1;
+                style_class = "fbis-rpanel-block";
+                var temp_key = key;
+                //Highlight my selected box with a different colour
+                if (key == data_value) {
+                    style_class += " fbis-rpanel-block-selected";
+                    temp_key = data_title;
+                    if (stretch_selection == true)
+                    {
+                        style_class += " flex-base-auto";
+                    }
+                }
+                result_html += (`<div class="${style_class}">
+                                 <div class="fbis-rpanel-block-text">
+                                 ${temp_key}</div></div>`)
+                
+            };
+            result_html += '</div>';
+            return result_html;
+        },
+
         showDetail: function (name, siteDetail, count) {
             var self = this;
             // Render basic information
@@ -121,14 +148,12 @@ define(['backbone', 'ol', 'shared'], function (Backbone, ol, Shared) {
                 '<div id="species-detail" class="search-results-wrapper">' +
                 '<div class="search-results-total" data-visibility="false"> Species details ' +
                 '<i class="fa fa-angle-down pull-right filter-icon-arrow"></i></div></div>');
-            $detailWrapper.append(
-                '<div id="third-party" class="search-results-wrapper">' +
-                '<div class="search-results-total" data-visibility="false"> 3rd Party Data ' +
-                '<i class="fa fa-angle-down pull-right filter-icon-arrow"></i></div></div>');
+
+            var $overviewPanelTitle = $('<div><img src="/static/img/fish-2-grey.png" style="width:36px;">&nbsp;Overview</div>');
 
             Shared.Dispatcher.trigger('sidePanel:openSidePanel', {});
             Shared.Dispatcher.trigger('sidePanel:fillSidePanelHtml', $detailWrapper);
-            Shared.Dispatcher.trigger('sidePanel:updateSidePanelTitle', name);
+            Shared.Dispatcher.trigger('sidePanel:updateSidePanelTitle', $overviewPanelTitle);
 
             self.siteDetail = siteDetail;
             if (siteDetail) {
@@ -148,17 +173,20 @@ define(['backbone', 'ol', 'shared'], function (Backbone, ol, Shared) {
                 Shared.TaxonDetailXHRRequest.abort();
                 Shared.TaxonDetailXHRRequest = null;
             }
+            var request_data = '';
             Shared.TaxonDetailXHRRequest = $.get({
                 url: this.url,
                 dataType: 'json',
                 success: function (data) {
-                    console.log(data);
-                    self.gbifId = data['gbif_id'];
+                    self.gbifId = data['gbif_key'];
                     if(self.count > 0) {
                         data['count'] = self.count;
                     }
+                    var speciesDetailContainer = $('#species-detail');
                     // render taxon detail
-                    $('#species-detail').append(self.renderDetail(data));
+                    speciesDetailContainer.append(self.renderDetail(data));
+
+                    //iucn data
                     $('#species-detail .iucn-status .name').css('background-color', data.iucn_status_colour);
                     $('#species-detail .iucn-status .full-name').css('color', data.iucn_status_colour);
                     $('#species-detail .iucn-status .full-name').css('border-color', data.iucn_status_colour);
@@ -166,17 +194,58 @@ define(['backbone', 'ol', 'shared'], function (Backbone, ol, Shared) {
                         $('#species-detail .iucn-status').hide();
                     }
 
-                    $('#third-party').click();
-                    $('#third-party').append(self.renderThirdPartyData(data));
+                    //Header Table
+
+                    $('#third-party-images').click();
+                    $('#third-party-images').append(self.renderThirdPartyData(data));
+
+                    speciesDetailContainer.find('#open-detailed-view').click(function () {
+                        Shared.Dispatcher.trigger('map:showTaxonDetailedDashboard', {
+                            taxonId: self.taxonId,
+                            taxonName: self.taxonName,
+                            siteDetail: self.siteDetail
+                        });
+                    });
 
                     Shared.LocationSiteDetailXHRRequest = null;
-                    $($('#species-detail').find('.records-link').get(0)).click({
+                    $(speciesDetailContainer.find('.records-link').get(0)).click({
                         taxonId: self.taxonId, taxonName: self.taxonName, siteDetail: self.siteDetail}, self.showRecords);
+
+                    var resourcesContainer = $('#taxon-resources');
+                    resourcesContainer.append(self.renderResources(data))
+
+                    this.OriginInfoList = $('.origin-info-list-detail');
+                    this.endemicInfoList= $('.endemic-info-list-detail');
+                    this.conservationStatusList = $('.conservation-status-list-detail');
+
+                    // Set origin
+                    var origin_block_data = {};
+                    origin_block_data['value'] = data['origin'];;
+                    origin_block_data['keys'] = ['Native', 'Non-native', 'Translocated'];
+                    origin_block_data['value_title'] = data['origin'];
+                    this.OriginInfoList.append(self.renderFBISRPanelBlocks(origin_block_data));
+
+                    // Set endemic
+                    var endemism_block_data = {};
+                    endemism_block_data['value'] = data['endemism'];;
+                    endemism_block_data['keys'] = ['Widespread', 'Regional endemic', 'Micro-endemic'];
+                    endemism_block_data['value_title'] = data['endemism'];
+                    this.endemicInfoList.append(self.renderFBISRPanelBlocks(endemism_block_data));
+
+                    //Set conservation status
+                    var cons_status_block_data = {};
+                    cons_status_block_data['value'] = data['iucn_status_name'];;
+                    cons_status_block_data['keys'] = ['NE', 'DD', 'LC' ,'NT', 'VU', 'EN', 'CR', 'EW', 'EX'];
+                    cons_status_block_data['value_title'] = data['iucn_status_name'] + ' (' + data['iucn_status_full_name'] + ')';
+                    this.conservationStatusList.append(self.renderFBISRPanelBlocks(cons_status_block_data, true));
+
                 },
                 error: function (req, err) {
 
                 }
             });
-        }
+        },
     })
 });
+
+

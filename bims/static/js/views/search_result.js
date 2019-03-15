@@ -1,4 +1,4 @@
-define(['backbone', 'models/search_result', 'shared', 'underscore', 'ol', 'jquery'], function (Backbone, SearchResult, Shared, _, ol, $) {
+define(['backbone', 'models/search_result', 'shared', 'underscore', 'jquery'], function (Backbone, SearchResult, Shared, _, $) {
     return Backbone.View.extend({
         id: 0,
         data: null,
@@ -10,22 +10,11 @@ define(['backbone', 'models/search_result', 'shared', 'underscore', 'ol', 'jquer
         },
         clicked: function (e) {
             if (this.getResultType() === 'taxa') {
-                filterParameters['siteId'] = '';
-                Shared.Dispatcher.trigger('searchResult:updateTaxon',
-                    this.model.get('id'),
-                    this.model.get('name')
-                );
-                Shared.Dispatcher.trigger('taxonDetail:show',
-                    this.model.get('id'),
-                    this.model.get('name'),
-                    null,
-                    this.model.get('count')
-                );
+                Shared.Dispatcher.trigger('searchResult:taxonClicked', this.model.attributes);
             } else if (this.getResultType() === 'site') {
-                var zoomToObject = true;
-                filterParameters['siteId'] = this.model.get('id');
-                Shared.Dispatcher.trigger('siteDetail:show',
-                    this.model.get('id'), this.model.get('name'), zoomToObject);
+                Shared.Dispatcher.trigger('searchResult:siteClicked', this.model.attributes);
+            } else if (this.getResultType() === 'show-more-site') {
+                console.log('Show more site');
             }
         },
         getResultType: function () {
@@ -39,6 +28,10 @@ define(['backbone', 'models/search_result', 'shared', 'underscore', 'ol', 'jquer
                 $('#taxa-list').append(this.$el);
             } else if (this.getResultType() === 'site') {
                 var template = _.template($('#search-result-site-template').html());
+                this.$el.html(template(this.model.attributes));
+                $('#site-list').append(this.$el);
+            } else if (this.getResultType() === 'show-more-site') {
+                var template = _.template($('#show-more-result-site-template').html());
                 this.$el.html(template(this.model.attributes));
                 $('#site-list').append(this.$el);
             }

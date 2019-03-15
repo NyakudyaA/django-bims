@@ -8,14 +8,27 @@
 
 {% block head %}
     <link href="{% static "css/non_validated_list.css" %}" rel="stylesheet">
+    <link href="{% static "js/libs/ol-layerswitcher/ol3-layerswitcher.css" %}" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'js/libs/datepicker/datepicker.css' %}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <link rel="stylesheet" href="{% static "js/libs/chosen/chosen.min.css" %}">
 
-    <script src="{% static 'js/libs/jquery/jquery-3.3.1.min.js' %}"></script>
+    <script src="https://code.jquery.com/jquery-3.3.1.min.js" integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8=" crossorigin="anonymous"></script>
     <script src="{% static 'js/libs/openlayers-4.6.4/ol.js' %}"></script>
 
     <script src="{% static 'js/libs/datepicker/datepicker.js' %}"></script>
     <script src="{% static 'js/libs/datepicker/i18n/datepicker.en.js' %}"></script>
-    <script src="{% static "js/libs/bootstrap-4.0.0/js/bootstrap.min.js" %}"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.0/js/bootstrap.min.js" integrity="sha384-uefMccjFJAIv6A+rW+L4AHf99KvxDjWSu1z9VI8SKNVmz4sk7buKt/6v9KI65qnm" crossorigin="anonymous"></script>
+
+    <script src="{% static "js/libs/ol-layerswitcher/ol-layerswitcher.js" %}"></script>
+    <script src="{% static "js/libs/chosen/chosen.jquery.min.js" %}"></script>
+
+    <script src="https://cdn.jsdelivr.net/gh/xcash/bootstrap-autocomplete@v2.1.0/dist/latest/bootstrap-autocomplete.min.js"></script>
+
+    <script>
+        const bingMapKey = '{{ bing_map_key }}';
+        const mapTilerKey = '{{ map_tiler_key }}';
+    </script>
 {% endblock %}
 
 {% block body_content %}
@@ -27,9 +40,30 @@
         <form id="form" method="post">
             {% csrf_token %}
             {% crispy form %}
+            <div id="div_id_location_site" class="form-group">
+                <label for="location_site" class="control-label">Site</label>
+                <select class="form-control basicAutoComplete" placeholder="type to search location site..." autocomplete="off" name="location_site"
+                    data-default-text="{{ location_site_selected.name }}" data-default-value="{{ location_site_selected.id }}"></select>
+            </div>
             <input name="geometry_type" type="hidden">
             <input name="geometry" type="hidden">
+            <input name="references" type="hidden">
+            <input name="documents" type="hidden">
         </form>
+        <div class="form-group">
+            <label>References</label>
+            <select multiple id="references" class="form-control">
+                {% for reference in all_references %}
+                    <option {% if reference.id in references_link %} selected {% endif %} value="{{ reference.id }}">{{ reference.title }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Documents</label>
+            <select multiple id="documents" class="form-control">
+
+            </select>
+        </div>
         <div class="form-group">
             <label>Geometry type</label>
             <select id="type" class="form-control">
@@ -39,7 +73,8 @@
             </select>
         </div>
         <label class="control-label">Location</label>
-        <div id="map" class="map" style="height: 400px; width: 600px; margin-bottom: 50px"></div>
+        <p id="coordinates-input-wrapper"><span>Lat: </span><input class="form-control-custom" id="custom-lat" type="text" onchange="updateLocationPoint()"> <span style="margin-left: 20px">Long: </span><input class="form-control-custom" id="custom-long" type="text" onchange="updateLocationPoint()"></p>
+        <div id="map" class="map" style="height: 400px; width: 100%; margin-bottom: 50px"></div>
         <input class="form-control btn btn-primary" form="form" type="submit" value="Update" />
     </div>
     </div>
@@ -52,8 +87,40 @@
             'POLYGON': 'Polygon'
         };
         var geojson  = new ol.format.GeoJSON;
+        var $references = $('#references');
+        var $documents = $('#documents');
+        var allDocuments = [];
+
 
         $(document).ready(function () {
+            // Prevent submission when pressing enter keyboard.
+            $(window).keydown(function(event){
+                if(event.keyCode === 13) {
+                  event.preventDefault();
+                  return false;
+                }
+              });
+
+            $('.basicAutoComplete').autoComplete({
+                minLength: 3,
+                resolverSettings: {
+                    url: '/location-site-autocomplete/'
+                }
+            });
+
+            $('#id_taxon_gbif_id').chosen();
+            $('#id_site').chosen();
+
+            $references.chosen();
+            $documents.chosen();
+
+            {% for documents in documents_selected %}
+                allDocuments.push('{{ documents.uuid }}');
+                $documents.append($('<option selected></option>')
+                        .attr('value', '{{ documents.id }}').text('{{ documents.title }}'));
+                $documents.trigger("chosen:updated");
+            {% endfor %}
+
             $('input[name=collection_date]').datepicker(
                 {
                     dateFormat: 'yyyy-mm-dd',
@@ -79,43 +146,127 @@
                 featureProjection: 'EPSG:3857'
             });
             source.addFeatures(geojson_feature);
+            map.getView().setCenter(ol.proj.transform([geometry_json['coordinates'][0], geometry_json['coordinates'][1]], 'EPSG:4326', 'EPSG:3857'));
+            map.getView().setZoom(10);
+            $('#custom-lat').val(geometry_json['coordinates'][0]);
+            $('#custom-long').val(geometry_json['coordinates'][1]);
 
-            $('#id_site').on('change', function () {
-                var location_pk = $(this).val();
-                $.ajax({
-                    type: 'GET',
-                    url: '/api/location-site/'+ location_pk +'/',
-                    success: function (data) {
-                        source.clear();
-                        var geometry_location = JSON.parse(data['geometry']);
-                        $('#type').val(geometry_location['type']).change();
-                        var geojsonObject2 = {
-                            'type': 'FeatureCollection',
-                            'features': [{
-                              'type': 'Feature',
-                              'geometry': {
-                                'type': geometry_location['type'],
-                                'coordinates': geometry_location['coordinates']
-                              }
-                            }]
-                        };
-                        var geojson_feature2 = geojson.readFeatures(geojsonObject2, {
-                            dataProjection: 'EPSG:4326',
-                            featureProjection: 'EPSG:3857'
-                        });
-                        source.addFeatures(geojson_feature2);
-                    }
-                })
-            })
+            $('.basicAutoComplete').on('change', function () {
+                $(this).css('border', '1px solid #ced4da');
+                $('.error-location-site').remove();
+
+                setTimeout(function () {
+                    var location_pk = $('[name=location_site]').val();
+                    $.ajax({
+                        type: 'GET',
+                        url: '/api/location-site-detail/?siteId='+ location_pk,
+                        success: function (data) {
+                            source.clear();
+                            var geometry_location = JSON.parse(data['geometry']);
+                            $('#type').val(geometry_location['type']).change();
+                            var geojsonObject2 = {
+                                'type': 'FeatureCollection',
+                                'features': [{
+                                  'type': 'Feature',
+                                  'geometry': {
+                                    'type': geometry_location['type'],
+                                    'coordinates': geometry_location['coordinates']
+                                  }
+                                }]
+                            };
+                            var geojson_feature2 = geojson.readFeatures(geojsonObject2, {
+                                dataProjection: 'EPSG:4326',
+                                featureProjection: 'EPSG:3857'
+                            });
+                            source.addFeatures(geojson_feature2);
+                            map.getView().setCenter(ol.proj.transform([geometry_location['coordinates'][0], geometry_location['coordinates'][1]], 'EPSG:4326', 'EPSG:3857'));
+                            map.getView().setZoom(10);
+                            $('#custom-lat').val(geometry_location['coordinates'][0]);
+                            $('#custom-long').val(geometry_location['coordinates'][1]);
+                        }
+                    })
+                }, 250);
+            });
+
+            if($('#type').val() !== 'Point'){
+                $('#coordinates-input-wrapper').hide();
+            }else {
+                $('#coordinates-input-wrapper').show();
+            }
+
+            getDocuments();
         });
 
+        function getDocuments(url) {
+            var documentsApiUrl = '/api/list-documents/';
+            if(url) {
+                documentsApiUrl = url;
+            }
+
+            $.ajax({
+                type: 'GET',
+                url: documentsApiUrl,
+                success: function (data) {
+                    if(!data.hasOwnProperty('results')) {
+                        return true;
+                    }
+                    $.each(data['results'], function (key, value) {
+                        if (allDocuments.indexOf(value.uuid) === -1) {
+                            allDocuments.push(value.uuid);
+                            $documents.append($('<option></option>')
+                                .attr('value', value.id).text(value.title));
+                            $documents.trigger("chosen:updated");
+                        }
+                    });
+
+                    if(data.hasOwnProperty('next')) {
+                        if(data['next']) {
+                            getDocuments(data['next']);
+                        }
+                    }
+                }
+            });
+
+        }
+
         $('#form').on('submit', function () {
-            var features = source.getFeatures();
-            var json = geojson.writeFeatures(features, {
+            if($('[name=location_site]').val() !== ''){
+                var features = source.getFeatures();
+                var json = geojson.writeFeatures(features, {
+                    featureProjection: 'EPSG:3857'
+                });
+                $('input[name=geometry_type]').val(typeSelect.value);
+                $('input[name=geometry]').val(json);
+                $('input[name=references]').val($references.chosen().val().join());
+                $('input[name=documents]').val($documents.chosen().val().join());
+            }else {
+                $('input[name=location_site_text]').css('border', '1px solid red').after('<span class="error-location-site" style="color: red">Location site is empty, please type to search location site</span>');
+                return false;
+            }
+        });
+
+        function updateLocationPoint() {
+            source.clear();
+            var lat = parseFloat($('#custom-lat').val());
+            var long = parseFloat($('#custom-long').val());
+            var coordinates = [lat, long];
+            var newGeojsonObject = {
+                'type': 'FeatureCollection',
+                'features': [{
+                  'type': 'Feature',
+                  'geometry': {
+                    'type': 'Point',
+                    'coordinates': coordinates
+                  }
+                }]
+            };
+            var new_geojson_feature = geojson.readFeatures(newGeojsonObject, {
+                dataProjection: 'EPSG:4326',
                 featureProjection: 'EPSG:3857'
             });
-            $('input[name=geometry_type]').val(typeSelect.value);
-            $('input[name=geometry]').val(json);
-        })
+            source.addFeatures(new_geojson_feature);
+            map.getView().setCenter(ol.proj.transform(coordinates, 'EPSG:4326', 'EPSG:3857'));
+            map.getView().setZoom(10);
+        }
     </script>
 {% endblock %}

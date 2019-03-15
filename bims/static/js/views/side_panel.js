@@ -5,8 +5,10 @@ define(['shared', 'backbone', 'underscore', 'jqueryUi', 'jquery', 'views/right_p
         rightPanel: null,
         returnButton: null,
         validationMode: false,
+        siteDetailData: null,
         events: {
-            'click .close-panel': 'closeSidePanel'
+            'click .close-panel': 'closeSidePanel',
+            'click .open-detailed-site-button' : 'openDetailedSiteButton'
         },
         initialize: function () {
             // Events
@@ -24,6 +26,7 @@ define(['shared', 'backbone', 'underscore', 'jqueryUi', 'jquery', 'views/right_p
 
             Shared.Dispatcher.on('sidePanel:openValidateDataList', this.openValidateDataList, this);
             Shared.Dispatcher.on('sidePanel:closeValidateDataList', this.closeValidateDataList, this);
+            Shared.Dispatcher.on('sidePanel:updateSiteDetailData', this.updateSiteDetailData, this);
 
             this.validateDataListView = new ValidateDataListView({
                 parent: this
@@ -97,7 +100,7 @@ define(['shared', 'backbone', 'underscore', 'jqueryUi', 'jquery', 'views/right_p
         updateSidePanelTitle: function (title) {
             var $rightPanelTitle = this.$el.find('.right-panel-title');
             $rightPanelTitle.html(title);
-            $('.side-panel-info').css("padding-top", $('.right-panel-header').outerHeight());
+            $('.side-panel-info').css("padding-top", '55px');
         },
         closeSidePanelAnimation: function () {
             var self = this;
@@ -107,7 +110,6 @@ define(['shared', 'backbone', 'underscore', 'jqueryUi', 'jquery', 'views/right_p
         },
         closeSidePanel: function (e) {
             Shared.Dispatcher.trigger('searchResult:clicked', null);
-            Shared.Router.clearSearch();
             Shared.Dispatcher.trigger('biodiversityLegend:moveRight');
             this.closeSidePanelAnimation();
             this.hideReturnButton();
@@ -152,6 +154,14 @@ define(['shared', 'backbone', 'underscore', 'jqueryUi', 'jquery', 'views/right_p
         hideReturnButton: function () {
             this.clearReturnButtonFunction();
             this.returnButton.hide();
+        },
+        updateSiteDetailData: function (siteDetailData) {
+            this.siteDetailData = siteDetailData;
+        },
+        openDetailedSiteButton: function () {
+            if (this.siteDetailData) {
+                Shared.Dispatcher.trigger('map:showSiteDetailedDashboard', this.siteDetailData);
+            }
         }
     })
 });

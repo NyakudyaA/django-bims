@@ -57,6 +57,20 @@ web:
 	@echo "Running in production mode"
 	@echo "------------------------------------------------------------------"
 	@docker-compose ${ARGS} up -d web
+	@docker-compose ${ARGS} up -d firefox
+	@docker-compose ${ARGS} up -d firefox-debug
+	@# Dont confuse this with the dbbackup make command below
+	@# This one runs the postgis-backup cron container
+	@# We add --no-recreate so that it does not destroy & recreate the db container
+	@docker-compose ${ARGS} up --no-recreate --no-deps -d dbbackups
+
+up-travis:
+	@echo
+	@echo "------------------------------------------------------------------"
+	@echo "Running in production mode"
+	@echo "------------------------------------------------------------------"
+	@docker-compose ${ARGS} up -d web
+	@docker-compose ${ARGS} up -d firefox
 	@# Dont confuse this with the dbbackup make command below
 	@# This one runs the postgis-backup cron container
 	@# We add --no-recreate so that it does not destroy & recreate the db container
@@ -261,12 +275,12 @@ dbbackup:
 	@echo "------------------------------------------------------------------"
 	@# - prefix causes command to continue even if it fails
 	@# Explicitly don't use -it so we can call this make target over a remote ssh session
-	@docker exec $(COMPOSE_PROJECT_NAME)-db-backups /backups.sh
-	@docker exec $(COMPOSE_PROJECT_NAME)-db-backups cat /var/log/cron.log | tail -2 | head -1 | awk '{print $4}'
+	@docker-compose exec dbbackups /backups.sh
+	@docker-compose exec dbbackups cat /var/log/cron.log | tail -2 | head -1 | awk '{print $4}'
 	-@if [ -f "backups/latest.dmp" ]; then rm backups/latest.dmp; fi
 	# backups is intentionally missing from front of first clause below otherwise symlink comes
 	# out with wrong path...
-	@ln -s `date +%Y`/`date +%B`/PG_$(COMPOSE_PROJECT_NAME)_gis.`date +%d-%B-%Y`.dmp backups/latest.dmp
+	@ln -s `date +%Y`/`date +%B`/PG_$(COMPOSE_PROJECT_NAME)_gis.`date +%d-%B-%Y`.dmp deployment/backups/latest.dmp
 	@echo "Backup should be at: backups/`date +%Y`/`date +%B`/PG_$(COMPOSE_PROJECT_NAME)_gis.`date +%d-%B-%Y`.dmp"
 
 sentry:
@@ -303,6 +317,10 @@ enable-machine:
 	@echo "Enabling docker machine."
 	@echo "------------------------------------------------------------------"
 	@echo "eval \"$(docker-machine env freshwater)\""
+
+sync: up
+	@docker-compose ${ARGS} exec uwsgi python manage.py makemigrations --noinput --merge
+	@docker-compose ${ARGS} exec uwsgi paver sync
 
 sync-geonode:
 	@docker-compose ${ARGS} exec uwsgi paver sync
@@ -392,6 +410,9 @@ django-test:
 coverage-django-test:
 	@docker-compose exec uwsgi coverage run -p --branch --source='.' manage.py test --noinput ${CMD_ARGS} bims
 
+coverage-django-test-selenium:
+	@docker-compose exec uwsgi coverage run -p --branch --source='.' manage.py test --noinput --keepdb ${CMD_ARGS} bims
+
 update-taxa:
 	@echo
 	@echo "--------------------------"
@@ -399,6 +420,12 @@ update-taxa:
 	@echo "--------------------------"
 	@docker-compose exec uwsgi python manage.py update_taxa
 
+add-default-location-site-view:
+	@echo
+	@echo "---------------------------------------"
+	@echo "Add db view for default location site"
+	@echo "---------------------------------------"
+	@docker-compose exec uwsgi python manage.py add_default_location_site_view
 
 update-location-context-documents:
 	@echo
@@ -406,6 +433,28 @@ update-location-context-documents:
 	@echo "Updating ALL location context documents"
 	@echo "--------------------------"
 	@docker-compose exec uwsgi python manage.py update_location_context_documents
+
+clear-location-context-documents:
+	@echo
+	@echo "--------------------------"
+	@echo "Clearing ALL location context documents"
+	@echo "--------------------------"
+	@docker-compose exec uwsgi python manage.py clear_location_context_documents
+
+add-location-context-group:
+	@echo
+	@echo "--------------------------"
+	@echo "Adding group to the location context documents"
+	@echo "--------------------------"
+	@docker-compose exec uwsgi python manage.py add_location_context_group
+
+update-ecological-data:
+	@echo
+	@echo "--------------------------"
+	@echo "Update ecological category and condition data from csv"
+	@echo "--------------------------"
+	@docker-compose exec uwsgi python manage.py update_ecological_data
+
 
 # --------------- help --------------------------------
 

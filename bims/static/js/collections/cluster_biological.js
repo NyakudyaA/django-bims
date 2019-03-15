@@ -6,11 +6,7 @@ define([
     'ol', 'jquery'], function (Backbone, ClusterModel, ClusterView, Shared, ol, $) {
     return Backbone.Collection.extend({
         model: ClusterModel,
-        apiParameters: _.template("?taxon=<%= taxon %>&search=<%= search %>&siteId=<%= siteId %>" +
-            "&icon_pixel_x=<%= clusterSize %>&icon_pixel_y=<%= clusterSize %>&zoom=<%= zoom %>&bbox=<%= bbox %>" +
-            "&collector=<%= collector %>&category=<%= category %>" +
-            "&yearFrom=<%= yearFrom %>&yearTo=<%= yearTo %>&months=<%= months %>&boundary=<%= boundary %>&userBoundary=<%= userBoundary %>" +
-            "&referenceCategory=<%= referenceCategory %>&reference=<%= reference %>"),
+        apiParameters: _.template(Shared.SearchURLParametersTemplate),
         clusterAPI: "/api/collection/cluster/",
         url: "",
         viewCollection: [],
@@ -21,17 +17,20 @@ define([
         fetchXhr: null,
         clusterData: null,
         defaultZoom: 8,
+        filteredByTaxon: true,
         parameters: {
             taxon: '', zoom: 0, bbox: [], siteId: '',
             collector: '', category: '', yearFrom: '', yearTo: '', months: '',
-            boundary: '', userBoundary: '', referenceCategory: '', reference: '',
-            clusterSize: Shared.ClusterSize
+            boundary: '', userBoundary: '', referenceCategory: '', reference: '', endemic: '',  spatialFilter: '',
+            clusterSize: Shared.ClusterSize, conservationStatus: ''
         },
-        initialize: function (initExtent) {
-            this.initExtent = initExtent;
-            Shared.Dispatcher.on('search:hit', this.searchHit, this);
+        initialize: function (parent) {
+            this.parent = parent;
+            this.initExtent = parent.initExtent;
             Shared.Dispatcher.on('clusterBiological:clearClusters', this.clearClusters, this);
+            Shared.Dispatcher.on(Shared.EVENTS.CLUSTER.GET, this.getClusters, this);
             Shared.Dispatcher.on('clusterBiological:resetParameters', this.clearParameters, this);
+            Shared.Dispatcher.on('clusterBiological:clearFilterByTaxon', this.clearFilterByTaxon, this);
         },
         clearParameters: function () {
             this.parameters['taxon'] = '';
@@ -45,6 +44,9 @@ define([
             this.parameters['referenceCategory'] = '';
             this.parameters['boundary'] = '';
             this.parameters['reference'] = '';
+            this.parameters['endemic'] = '';
+            this.parameters['conservationStatus'] = '';
+            this.parameters['spatialFilter'] = '';
             Shared.Dispatcher.trigger('cluster:updated', this.parameters);
             if (typeof filterParameters !== 'undefined') {
                 filterParameters = $.extend(true, {}, this.parameters);
@@ -67,7 +69,7 @@ define([
             this.resetClusters();
             this.toggleTaxonIndicator();
         },
-        searchHit: function (parameters) {
+        getClusters: function (parameters) {
             this.resetClusters();
             this.fromSearchClick = true;
             parameters['bbox'] = null;
@@ -89,8 +91,9 @@ define([
                 this.fetchXhr = this.fetchCluster();
             }
         },
-        fetchCluster: function () {
+        fetchCluster: function (zoomToExtent) {
             var self = this;
+            this.parameters['bbox'] = null;
             this.url = this.clusterAPI + this.apiParameters(this.parameters);
             return this.fetch({
                 success: function () {
@@ -113,12 +116,12 @@ define([
                     if(self.status === 'processing') {
                         self.renderCollection();
                         setTimeout(function () {
-                            self.fetchCluster()
+                            self.fetchCluster(zoomToExtent)
                         }, timeout);
                     } else {
                         self.initialSearch = true;
                         self.secondSearch = false;
-                        if(self.fromSearchClick) {
+                        if(self.fromSearchClick || zoomToExtent) {
                             self.createExtents();
                             self.fromSearchClick = false;
                         }
@@ -140,6 +143,9 @@ define([
                 && !this.parameters['userBoundary']
                 && !this.parameters['referenceCategory']
                 && !this.parameters['reference']
+                && !this.parameters['endemic']
+                && !this.parameters['conservationStatus']
+                && !this.parameters['spatialFilter']
                 && !this.parameters['boundary']) {
                 return false
             } else {
@@ -163,25 +169,38 @@ define([
         },
         toggleTaxonIndicator: function (taxonName) {
             var self = this;
+            var $taxonFilter = $('#taxon-filter');
             if (this.parameters['taxon']) {
-                $('#taxon-filter').html('Biodiversity filtered by : ' + taxonName +
+                self.filteredByTaxon = true;
+                $taxonFilter.html('Sites filtered by : ' + taxonName +
                     ' <i class="fa fa-times" style="color: red"></i> ');
                 $('#taxon-filter .fa-times').click(function () {
                     Shared.Dispatcher.trigger('sidePanel:closeSidePanel');
                     self.parameters['taxon'] = null;
                     self.toggleTaxonIndicator('');
-                    self.getExtentOfRecords();
+                    self.refetchClusters(true);
+                    self.filteredByTaxon = false;
                 });
-                if ($('#taxon-filter').is(":hidden")) {
-                    $('#taxon-filter').toggle("slide");
+                if ($taxonFilter.is(":hidden")) {
+                    $taxonFilter.toggle("slide");
                 }
             } else {
-                if (!$('#taxon-filter').is(":hidden")) {
-                    $('#taxon-filter').toggle("slide");
+                self.filteredByTaxon = false;
+                if (!$taxonFilter.is(":hidden")) {
+                    $taxonFilter.toggle("slide");
                 }
             }
         },
-        updateTaxon: function (taxon, taxonName) {
+        clearFilterByTaxon: function () {
+            if (!this.filteredByTaxon) {
+                return false;
+            }
+            this.parameters['taxon'] = null;
+            this.toggleTaxonIndicator('');
+            this.refetchClusters();
+            this.filteredByTaxon = false;
+        },
+        filterClustersByTaxon: function (taxon, taxonName) {
             this.parameters['taxon'] = taxon;
             this.toggleTaxonIndicator(taxonName);
             this.refresh();
@@ -210,32 +229,12 @@ define([
                 Shared.Dispatcher.trigger('map:zoomToExtent', ext);
             }
         },
-        refetchClusters: function () {
+        refetchClusters: function (zoomToExtent) {
             Shared.Dispatcher.trigger('cluster:updated', this.parameters);
             var self = this;
             if (this.isActive()) {
                 this.resetClusters();
-                this.fetchXhr = this.fetchCluster();
-            } else {
-                Shared.Dispatcher.trigger('map:zoomToExtent', self.initExtent);
-            }
-        },
-        getExtentOfRecords: function () {
-            Shared.Dispatcher.trigger('cluster:updated', this.parameters);
-            var self = this;
-            if (this.isActive()) {
-                var extentUrl = '/api/collection/extent/' + this.apiParameters(this.parameters);
-                $.ajax({
-                    url: extentUrl,
-                    dataType: "json",
-                    success: function (data) {
-                        if (data.length === 4) {
-                            Shared.Dispatcher.trigger('map:zoomToExtent', data);
-                        } else {
-                            Shared.Dispatcher.trigger('map:zoomToExtent', self.initExtent);
-                        }
-                    }
-                });
+                this.fetchXhr = this.fetchCluster(zoomToExtent);
             } else {
                 Shared.Dispatcher.trigger('map:zoomToExtent', self.initExtent);
             }
@@ -249,6 +248,13 @@ define([
         },
         renderCollection: function () {
             var self = this;
+            if (!this.parent.isAllLayersReady()) {
+                setTimeout(function () {
+                    self.renderCollection();
+                }, 500);
+                return false;
+            }
+            this.parent.resetAdministrativeLayers();
             $.each(this.viewCollection, function (index, view) {
                 view.destroy();
             });

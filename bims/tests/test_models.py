@@ -1,11 +1,7 @@
 # coding=utf-8
 """Tests for models."""
-import json
-import unittest
-import mock
-
 from django.test import TestCase
-from django.contrib.gis.geos import LineString, Point
+from django.contrib.gis.geos import LineString
 from django.core.exceptions import ValidationError
 from django.db.models import signals
 from bims.tests.model_factories import (
@@ -14,6 +10,8 @@ from bims.tests.model_factories import (
     TaxonF,
     IUCNStatusF,
     SurveyF,
+    EndemismF,
+    FbisUUIDF,
 )
 from bims.models.iucn_status import iucn_status_pre_save_handler
 from bims.utils.get_key import get_key
@@ -212,35 +210,6 @@ class TestLocationSiteCRUD(TestCase):
 
         # check if validation error raised
         self.assertRaises(ValidationError, location_site.save)
-
-    @unittest.skipIf(skip_geocontext, 'Url or collection key is not found')
-    @mock.patch('requests.get', side_effect=mocked_requests_get)
-    def test_LocationSite_update_location_context_document(self, mock_get):
-        """Test updating location context document"""
-        location_site = LocationSiteF.create(geometry_point=Point(0, 0))
-        self.assertIsNone(location_site.location_context_document)
-        old_point = {
-            'geometry_point': Point(27, -31),
-        }
-        location_site.__dict__.update(old_point)
-        # update_location_context_document is called here
-        location_site.save()
-        old_context = location_site.location_context_document
-        self.assertIsNotNone(old_context)
-        self.assertEqual(old_context, json.dumps(first_json_data))
-        self.assertEqual(json.loads(old_context), first_json_data)
-        new_point = {
-            'geometry_point': Point(26, -30),
-        }
-        location_site.__dict__.update(new_point)
-        # update_location_context_document is called here
-        location_site.save()
-        self.assertIsNotNone(location_site.location_context_document)
-        self.assertNotEqual(
-            location_site.location_context_document, old_context)
-        self.assertEqual(
-            location_site.location_context_document, json.dumps(
-                second_json_data))
 
 
 class TestIUCNStatusCRUD(TestCase):
@@ -459,3 +428,88 @@ class TestSurveyCRUD(TestCase):
 
         # check if deleted
         self.assertTrue(model.pk is None)
+
+
+class TestEndemismCRUD(TestCase):
+    """
+    Tests endemism model.
+    """
+    ENDEMISM_DEFAULT_VALUE = 'endemism'
+
+    def setUp(self):
+        """
+        Sets up before each test
+        """
+        self.endemism1 = EndemismF.create(
+            name=self.ENDEMISM_DEFAULT_VALUE
+        )
+        pass
+
+    def test_Survey_create(self):
+        """
+        Tests endemism creation
+        """
+
+        # check if pk exists
+        self.assertTrue(self.endemism1.pk is not None)
+
+        # check if name exists
+        self.assertTrue(self.endemism1.name is not None)
+
+    def test_Survey_read(self):
+        """
+        Survey endemism model read
+        """
+        self.assertTrue(
+            self.endemism1.name == self.ENDEMISM_DEFAULT_VALUE)
+
+    def test_Survey_update(self):
+        """
+        Tests survey model update
+        """
+        new_data = {
+            'name': 'endemism new value'
+        }
+        self.endemism1.__dict__.update(new_data)
+        self.endemism1.save()
+
+        # check if updated
+        for key, val in new_data.items():
+            self.assertEqual(self.endemism1.__dict__.get(key), val)
+
+    def test_Survey_delete(self):
+        """
+        Tests survey model delete
+        """
+        model = EndemismF.create()
+        model.delete()
+
+        # check if deleted
+        self.assertTrue(model.pk is None)
+
+
+class TestFbisUUID(TestCase):
+    """
+    Tests FbisUUID model.
+    """
+
+    def setUp(self):
+        """
+        Sets up before each test
+        """
+        pass
+
+    def test_create(self):
+        """
+        Tests FbisUUID creation
+        """
+        from django.contrib.contenttypes.models import ContentType
+        from bims.models.endemism import Endemism
+
+        endemism = EndemismF.create(name='test')
+        ctype = ContentType.objects.get_for_model(Endemism)
+        fbis_uuid = FbisUUIDF.create(
+            content_type=ctype,
+            object_id=endemism.id
+        )
+        self.assertEqual(fbis_uuid.content_object.id, endemism.id)
