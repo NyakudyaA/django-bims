@@ -68,7 +68,6 @@ class SearchVersion2APIView(APIView):
 
 
 class SearchVersion2(object):
-
     location_sites_raw_query = ''
     collection_records = None
 
@@ -111,6 +110,23 @@ class SearchVersion2(object):
     @property
     def search_query(self):
         return self.get_request_data('search')
+
+    def validation_filter(self):
+        """
+        Get validation filter
+        :return: dict of validation filter
+        """
+        validated_value = self.get_request_data('validated')
+        if validated_value == 'all':
+            # Get all validated and not validated records
+            return {}
+        if validated_value == 'false':
+            return {
+                'validated': False,
+            }
+        return {
+            'validated': True
+        }
 
     @property
     def taxon_id(self):
@@ -202,15 +218,22 @@ class SearchVersion2(object):
             bio = BiologicalCollectionRecord.objects.filter(
                 Q(original_species_name__icontains=self.search_query) |
                 Q(taxonomy__scientific_name__icontains=self.search_query) |
-                Q(taxonomy__vernacular_names__name__icontains=
-                  self.search_query) |
                 Q(site__site_code__icontains=self.search_query)
             )
+            if not bio:
+                # Search by vernacular names
+                bio = BiologicalCollectionRecord.objects.filter(
+                    taxonomy__vernacular_names__name__icontains=
+                    self.search_query
+                )
         else:
             bio = BiologicalCollectionRecord.objects.all()
 
         filters = dict()
-        filters['validated'] = True
+        validation_filter = self.validation_filter()
+        if validation_filter:
+            filters.update(validation_filter)
+
         filters['taxonomy__isnull'] = False
         if self.site_ids:
             filters['site__in'] = self.site_ids
