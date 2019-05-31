@@ -65,13 +65,38 @@ function drawMap(data) {
 }
 
 function renderSassScoreChart(data) {
+
+    // find color from ecological data
+    let defaultColor = '#c6c6c6';
+    let sassChartBackgroundColor = [];
+    let siteIds = $.extend([], data['sass_score_chart_data']['site_id']);
+    $.each(siteIds, function (index, data) {
+        sassChartBackgroundColor.push(defaultColor);
+    });
+    $.each(data['ecological_chart_data'], function (index, ecological_data) {
+        $.each(ecological_data['site_data']['site_ids'], function (site_id_index, site_id) {
+            if ($.inArray(site_id, siteIds) >= 0) {
+                let siteIndex = $.inArray(site_id, siteIds);
+                let sassScore = data['sass_score_chart_data']['sass_score'][siteIndex];
+                let asptScore = data['sass_score_chart_data']['aspt_score'][siteIndex];
+                $.each(ecological_data['chart_data'], function (ecologicalDataIndex, ecologicalData) {
+                    if (sassScore > ecologicalData['sass'] || asptScore > ecologicalData['aspt']) {
+                        sassChartBackgroundColor[siteIndex] = ecologicalData['color'];
+                        return false;
+                    }
+                });
+
+            }
+        });
+    });
+
     // Sass score chart
     let sassScoreData = {
         labels: data['sass_score_chart_data']['site_code'],
         datasets: [{
             label: 'Sass Score',
-            backgroundColor: '#589f48',
-            borderColor: '#589f48',
+            backgroundColor: sassChartBackgroundColor,
+            borderColor: sassChartBackgroundColor,
             borderWidth: 1,
             data: data['sass_score_chart_data']['sass_score']
         }]
@@ -80,8 +105,8 @@ function renderSassScoreChart(data) {
         labels: data['sass_score_chart_data']['site_code'],
         datasets: [{
             label: 'Number of taxa',
-            backgroundColor: '#589f48',
-            borderColor: '#589f48',
+            backgroundColor: sassChartBackgroundColor,
+            borderColor: sassChartBackgroundColor,
             borderWidth: 1,
             data: data['sass_score_chart_data']['taxa_count']
         }]
@@ -90,15 +115,18 @@ function renderSassScoreChart(data) {
         labels: data['sass_score_chart_data']['site_code'],
         datasets: [{
             label: 'ASPT',
-            backgroundColor: '#589f48',
-            borderColor: '#589f48',
+            backgroundColor: sassChartBackgroundColor,
+            borderColor: sassChartBackgroundColor,
             borderWidth: 1,
             data: data['sass_score_chart_data']['aspt_score']
         }]
     };
     let options = {
         legend: {
-            position: 'bottom'
+            position: 'bottom',
+            labels: {
+                boxWidth: 0,
+            }
         },
         tooltips: {
             enabled: true,
@@ -117,7 +145,6 @@ function renderSassScoreChart(data) {
             }]
         },
         responsive: true,
-        maintainAspectRatio: false,
     };
     let hiddenYAxesLabelOptions = JSON.parse(JSON.stringify(options));
     hiddenYAxesLabelOptions['scales']['yAxes'] = [{
@@ -131,18 +158,22 @@ function renderSassScoreChart(data) {
         }
     };
 
-    $("#sass-score-chart").height(18 * sassScoreData['labels'].length);
-    let sassScoreChart = new Chart(document.getElementById('sass-score-chart'), {
+    var chartHeight = 20 * sassScoreData['labels'].length;
+    chartHeight = (chartHeight > 170) ? chartHeight : 170;
+    document.getElementById('sass-score-chart-multiple').height = chartHeight;
+    document.getElementById('taxa-numbers-chart-multiple').height = chartHeight;
+    document.getElementById('aspt-chart-multiple').height = chartHeight;
+    let sassScoreChart = new Chart(document.getElementById('sass-score-chart-multiple'), {
         type: 'horizontalBar',
         data: sassScoreData,
         options: options
     });
-    let taxaCountScoreChart = new Chart($('#taxa-numbers-chart'), {
+    let taxaCountScoreChart = new Chart(document.getElementById('taxa-numbers-chart-multiple'), {
         type: 'horizontalBar',
         data: taxaCountData,
         options: hiddenYAxesLabelOptions
     });
-    let asptScoreChart = new Chart($('#aspt-chart'), {
+    let asptScoreChart = new Chart(document.getElementById('aspt-chart-multiple'), {
         type: 'horizontalBar',
         data: asptScoreData,
         options: hiddenYAxesLabelOptions
@@ -486,7 +517,28 @@ function renderEcologicalChart(data) {
         })
     }
 
+    let mergedEcologicalChartData = [];
+    let combinedData = {};
+
+    // Merge combined data with same key
     $.each(ecologicalChartData, function (index, chartData) {
+       if (chartData['site_data']['geo_class'].toLowerCase() !== 'combined') {
+            mergedEcologicalChartData.push(chartData);
+            return true;
+       }
+       if (!combinedData.hasOwnProperty(chartData['site_data']['geo_class'])) {
+           mergedEcologicalChartData.push(chartData);
+           combinedData[chartData['site_data']['geo_class']] = mergedEcologicalChartData.length - 1;
+       } else {
+            let indexCombined = combinedData[chartData['site_data']['geo_class']];
+            mergedEcologicalChartData[indexCombined]['site_data']['site_ids'].push.apply(
+                mergedEcologicalChartData[indexCombined]['site_data']['site_ids'],
+                chartData['site_data']['site_ids']
+            )
+       }
+    });
+
+    $.each(mergedEcologicalChartData, function (index, chartData) {
         let siteIds = chartData['site_data']['site_ids'];
         let plotData = [];
         $.each(siteIds, (indexSiteId, siteId) => {
@@ -503,12 +555,12 @@ function renderEcologicalChart(data) {
         if (!legendCreated) {
             legendCreated = true;
             let legendContainer = $('.ecological-legend-container');
-            $.each(chartData['chart_data'].reverse(), (indexChartData, boundaryData) => {
+            $.each(chartData['chart_data'], (indexChartData, boundaryData) => {
                 let $legend = $('<span class="ecological-chart-legend">&nbsp;</span>');
                 legendContainer.append($legend);
                 $legend.after(boundaryData['ec_category']);
                 $legend.css('background-color', boundaryData['color']);
-            })
+            });
         }
 
         let $div = $('<div>');
@@ -536,6 +588,73 @@ function renderAll(data) {
     renderEcologicalChart(data);
 }
 
+function removeParam(sourceURL, key) {
+    let rtn = sourceURL.split("?")[0],
+        param,
+        params_arr = [],
+        queryString = (sourceURL.indexOf("?") !== -1) ? sourceURL.split("?")[1] : "";
+    if (queryString !== "") {
+        params_arr = queryString.split("&");
+        for (var i = params_arr.length - 1; i >= 0; i -= 1) {
+            param = params_arr[i].split("=")[0];
+            if (param === key) {
+                params_arr.splice(i, 1);
+            }
+        }
+        rtn = rtn + "?" + params_arr.join("&");
+    }
+    return rtn;
+}
+
+function renderPaginationNavBar(currentPage, totalPage) {
+   let $previousPage = $('.previous-pagination');
+   let $nextPage = $('.next-pagination');
+   let currentUrl = removeParam(window.location.href, 'page');
+   let maxPage = 10;
+   let firstPage = 0;
+   let pageStep = Math.ceil(currentPage/maxPage);
+   if (currentPage > maxPage) {
+       firstPage = maxPage * (pageStep - 1);
+       maxPage = pageStep * maxPage;
+   }
+   if (totalPage < maxPage) {
+       maxPage = totalPage;
+   }
+   for (let i = maxPage; i > firstPage; i--) {
+       let active = '';
+       let url = currentUrl + '&page=' + i;
+       if (currentPage === i) {
+           active = 'active';
+       }
+       $previousPage.after(
+           '<li class="page-item ' + active + '"><a class="page-link" href="' + url + '">' + i + '</a></li>'
+       );
+   }
+   if (firstPage > 1) {
+       let url = currentUrl + '&page=' + firstPage;
+       $previousPage.after(
+           '<li class="page-item"><a class="page-link" href="' + url + '">...</a></li>'
+       )
+   }
+   if (totalPage > maxPage) {
+       let url = currentUrl + '&page=' + (maxPage + 1);
+       $nextPage.before(
+           '<li class="page-item"><a class="page-link" href="' + url + '">...</a></li>'
+       )
+   }
+   if (currentPage > 1) {
+       $previousPage.removeClass('disabled');
+       let link = $previousPage.find('a');
+       link.attr('href', currentUrl + '&page=' + (currentPage - 1));
+   }
+   if (currentPage < totalPage) {
+       $nextPage.removeClass('disabled');
+       let link = $nextPage.find('a');
+       link.attr('href', currentUrl + '&page=' + (currentPage + 1));
+   }
+
+}
+
 $(function () {
     let params = window.location.href.split('dashboard-multi-sites')[1];
     let url = '/sass/dashboard-multi-sites-api' + params;
@@ -544,6 +663,7 @@ $(function () {
         dataType: 'json',
         success: function (data) {
             $('.ajax-container').show();
+            renderPaginationNavBar(data['current_page'], data['total_pages']);
             renderFilterList($('.filter-table'));
             renderAll(data);
         }

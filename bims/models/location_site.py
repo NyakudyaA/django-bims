@@ -11,10 +11,11 @@ from django.core.exceptions import ValidationError
 from django.contrib.gis.db import models
 from django.dispatch import receiver
 from django.contrib.postgres.fields import JSONField
-from bims.models.boundary import Boundary
 from bims.models.location_type import LocationType
 from bims.utils.get_key import get_key
 from bims.models.document_links_mixin import DocumentLinksMixin
+from bims.models.search_process import SearchProcess
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -41,10 +42,22 @@ class LocationSite(DocumentLinksMixin):
         blank=True,
         default=''
     )
+    legacy_site_code = models.CharField(
+        max_length=100,
+        blank=True,
+        default=''
+    )
     location_type = models.ForeignKey(
         LocationType,
         models.CASCADE,
         null=False,
+    )
+    refined_geomorphological = models.CharField(
+        blank=True,
+        null=True,
+        max_length=200,
+        help_text='Would be used in preference to the one discovered '
+                  'in geocontext',
     )
     geometry_point = models.PointField(
         null=True,
@@ -98,13 +111,6 @@ class LocationSite(DocumentLinksMixin):
         blank=True
     )
 
-    boundary = models.ForeignKey(
-        Boundary,
-        help_text='This is lowest boundary where location is placed.',
-        blank=True,
-        null=True,
-    )
-
     latitude = models.FloatField(
         blank=True,
         help_text='This is intended only for IPT',
@@ -116,6 +122,32 @@ class LocationSite(DocumentLinksMixin):
         help_text='This is intended only for IPT',
         null=True
     )
+    original_geomorphological = models.CharField(
+        blank=True,
+        null=True,
+        max_length=200,
+        help_text='Original geomorphological zone from spatial layer'
+    )
+
+    def location_context_group_values(self, group_name):
+        """
+        Returns location group data by group name
+        :param group_name: string of group name, e.g. geomorphological_group
+        :return: dict of group data
+        """
+        try:
+            location_context = json.loads(self.location_context)
+        except ValueError:
+            return {}
+        try:
+            return (
+                location_context
+                ['context_group_values']
+                [group_name]
+                ['service_registry_values']
+            )
+        except KeyError:
+            return {}
 
     def get_centroid(self):
         """ Getting centroid of location site """
@@ -181,6 +213,7 @@ class LocationSite(DocumentLinksMixin):
             latitude=latitude,
             geocontext_group_key=group_key,
         )
+        LOGGER.info('Request url : {}'.format(url))
 
         r = requests.get(url)
         if r.status_code != 200:
@@ -198,8 +231,11 @@ class LocationSite(DocumentLinksMixin):
         if old_location_context_string:
             try:
                 old_location_context = json.loads(old_location_context_string)
-            except ValueError:
-                LOGGER.info('No JSON Object')
+            except (ValueError, TypeError):
+                if isinstance(old_location_context_string, dict):
+                    old_location_context = old_location_context_string
+                else:
+                    LOGGER.info('Not a JSON Object')
         new_data = self.get_geocontext_group_data(group_key)
         if not new_data:
             return False, "Error from GeoContext"
@@ -298,7 +334,6 @@ class LocationSite(DocumentLinksMixin):
         return field
 
     def save(self, *args, **kwargs):
-        """Check if one of geometry is not null."""
         self.additional_data = self.validate_json_field(
             self.additional_data
         )
@@ -309,6 +344,7 @@ class LocationSite(DocumentLinksMixin):
             self.location_context
         )
 
+        """Check if one of geometry is not null."""
         if self.geometry_point or self.geometry_line or \
                 self.geometry_polygon or self.geometry_multipolygon:
             # Check if geometry is allowed
@@ -323,9 +359,19 @@ class LocationSite(DocumentLinksMixin):
         else:
             raise ValidationError('At least one geometry need to be filled.')
 
+        if (
+                self.__original_refined_geomorphological !=
+                self.refined_geomorphological):
+            SearchProcess.objects.filter(
+                finished=True
+            ).delete()
+
     def __init__(self, *args, **kwargs):
         super(LocationSite, self).__init__(*args, **kwargs)
         self.__original_centroid = self.get_centroid()
+        self.__original_refined_geomorphological = (
+            self.refined_geomorphological
+        )
 
 
 @receiver(models.signals.post_save)

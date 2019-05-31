@@ -27,9 +27,11 @@
         const min_year_filter = '{{ date_filter.min }}';
         const bingMapKey = '{{ bing_map_key }}';
         const mapTilerKey = '{{ map_tiler_key }}';
+        const mapSurferKey = '{{ map_surfer_key }}';
         const geocontextUrl = '{{ geocontext_url }}';
         const geocontextCollectionKey = '{{ geocontext_collection_key }}';
         const listCollectorAPIUrl = '{% url "list-collector" %}';
+        const listSourceCollectionAPIUrl = '{% url "list-source-collection" %}';
         const listReferenceAPIUrl = '{% url "list-reference" %}';
         const isUsingReferenceFilter = "{% if use_reference_filter %} true {% else %} false {% endif %}";
         const centerPointMap = '{{ center_point_map }}';
@@ -37,6 +39,7 @@
         const listBoundaryAPIUrl = '{% url "list-boundary" %}';
         const listNonBiodiversityLayerAPIUrl = '{% url "list-non-biodiversity-layer" %}';
         const uploadDataUrl = '{% url "upload-collection" %}';
+        const multiSitesOverviewDataUrl = '{% url "multi-location-sites-overview" %}';
         const collectionCategory = "{{ collection_category|safe }}";
         const csrfmiddlewaretoken = "{{ csrf_token }}";
         const biological_modules = "{{ biological_modules|safe }}";
@@ -49,7 +52,7 @@
         const isHealthyrivers = {% if is_healthyrivers %} true {% else %} false {% endif %}
         const ogcServerDefaultLocation = "{{ OGC_SERVER.default.PUBLIC_LOCATION }}";
         const userCanValidate = "{% if can_validate %} true {% else %} false {% endif %}";
-        const geoserverPublicUrl = '{{ geoserver_public_location }}';
+        const geoserverPublicUrl = '/bims_proxy/{{ geoserver_public_location }}';
         var filterParameters = {};
         var conservationStatusData = [];
         const is_sass_enabled = {% if is_sass_enabled %}true{% else %}false{% endif %};
@@ -59,6 +62,7 @@
         const locationSiteGeoserverLayer = '{{ bims_preferences.geoserver_location_site_layer }}';
         const defaultWMSSiteParameters = '{{ bims_preferences.default_location_site_cluster }}';
         const emptyWMSSiteParameter = '{{ bims_preferences.empty_location_site_cluster }}';
+        const isStaff = {% if user.is_superuser or user.is_staff %} true {% else %} false {% endif %};
     </script>
     {% block extra_head %}
 

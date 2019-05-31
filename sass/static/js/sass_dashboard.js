@@ -60,12 +60,30 @@ function drawMap() {
 }
 
 function renderSASSSummaryChart() {
+    // Process data by ecological
+    let sassChartBackgroundColor = [];
+    let defaultColor = '#c6c6c6';
+
+    $.each(sassScores, function (sasScoreIndex, sassScore) {
+        let foundColor = false;
+        $.each(ecologicalChartData, function (index, ecologicalData) {
+            if (sassScore > ecologicalData['sass_score_precentile'] || asptList[sasScoreIndex] > ecologicalData['aspt_score_precentile']) {
+                sassChartBackgroundColor.push(ecologicalData['ecological_colour']);
+                foundColor = true;
+                return false;
+            }
+        });
+        if (!foundColor) {
+            sassChartBackgroundColor.push(defaultColor);
+        }
+    });
+
     let data = {
         'labels': dateLabels,
         'datasets': [{
             'label': 'SASS Scores',
             'data': sassScores,
-            'backgroundColor': '#589f48',
+            'backgroundColor': sassChartBackgroundColor,
             'fill': 'false',
         }]
     };
@@ -74,7 +92,7 @@ function renderSASSSummaryChart() {
         'datasets': [{
             'label': 'Number of Taxa',
             'data': taxaNumbers,
-            'backgroundColor': '#589f48',
+            'backgroundColor': sassChartBackgroundColor,
             'fill': 'false',
         }]
     };
@@ -83,38 +101,51 @@ function renderSASSSummaryChart() {
         'datasets': [{
             'label': 'ASPT',
             'data': asptList,
-            'backgroundColor': '#589f48',
+            'backgroundColor': sassChartBackgroundColor,
             'fill': 'false',
         }]
     };
-    let scalesOption = {
-        xAxes: [{
-            display: false
-        }],
-        yAxes: [{
-            ticks: {
-                beginAtZero: true
+
+    function scalesOptionFunction(label) {
+        return {
+            yAxes: [{
+                ticks: {
+                    beginAtZero: true
+                },
+                scaleLabel: {
+                    display: true,
+                    labelString: label
+                }
+            }]
+        };
+    }
+
+    function optionsFunction(label) {
+        return {
+            scales: scalesOptionFunction(label),
+            legend: {
+                display: false
             }
-        }]
-    };
-    let options = {
-        scales: scalesOption
-    };
+        };
+    }
+
     let sassScoreChart = new Chart($('#sass-score-chart'), {
         type: 'bar',
         data: data,
-        options: options
+        options: optionsFunction('SASS Scores')
     });
+
     let taxaNumberChart = new Chart($('#taxa-numbers-chart'), {
         type: 'bar',
         data: taxaNumberData,
-        options: options
+        options: optionsFunction('Number of Taxa')
     });
+
     let asptChart = new Chart($('#aspt-chart'), {
         type: 'bar',
         data: asptData,
         options: {
-            scales: scalesOption,
+            scales: scalesOptionFunction('ASPT'),
             tooltips: {
                 callbacks: {
                     label: function (tooltipItem, chart) {
@@ -122,6 +153,9 @@ function renderSASSSummaryChart() {
                         return 'ASPT : ' + tooltipItem.yLabel.toFixed(2);
                     }
                 }
+            },
+            legend: {
+                display: false
             }
         }
     });
@@ -190,7 +224,9 @@ function renderSASSTaxonPerBiotope() {
 
     // SASS Score total
     let $sassScoreTr = $('<tr class="total-table" id="sass-score-total">');
-    $sassScoreTr.append('<td colspan="3">SASS Score</td>');
+    $sassScoreTr.append('<td>SASS Score</td>');
+    $sassScoreTr.append('<td> </td>');
+    $sassScoreTr.append('<td> </td>');
     $sassScoreTr.append('<td class="stone">-</td>');
     $sassScoreTr.append('<td class="veg">-</td>');
     $sassScoreTr.append('<td class="gravel">-</td>');
@@ -199,7 +235,9 @@ function renderSASSTaxonPerBiotope() {
 
     // Number of taxa
     let $numberTaxaTr = $('<tr class="total-table" id="number-taxa">');
-    $numberTaxaTr.append('<td colspan="3">Number of Taxa</td>');
+    $numberTaxaTr.append('<td>Number of Taxa</td>');
+    $numberTaxaTr.append('<td> </td>');
+    $numberTaxaTr.append('<td> </td>');
     $numberTaxaTr.append('<td class="stone">-</td>');
     $numberTaxaTr.append('<td class="veg">-</td>');
     $numberTaxaTr.append('<td class="gravel">-</td>');
@@ -208,7 +246,9 @@ function renderSASSTaxonPerBiotope() {
 
     // ASPT
     let $asptTr = $('<tr class="total-table" id="total-aspt">');
-    $asptTr.append('<td colspan="3">ASPT</td>');
+    $asptTr.append('<td>ASPT</td>');
+    $asptTr.append('<td> </td>');
+    $asptTr.append('<td> </td>');
     $asptTr.append('<td class="stone">-</td>');
     $asptTr.append('<td class="veg">-</td>');
     $asptTr.append('<td class="gravel">-</td>');
@@ -248,7 +288,17 @@ function renderSASSTaxonPerBiotope() {
 }
 
 function renderSensitivityChart() {
-    let options = {};
+    let options = {
+        tooltips: {
+            callbacks: {
+                label: function (tooltipItem, chartData) {
+                    let index = tooltipItem['index'];
+                    let label = chartData['labels'][index];
+                    return label;
+                }
+            }
+        }
+    };
     let data = {
         datasets: [{
             data: [
@@ -405,6 +455,13 @@ function createEcologicalScatterDataset(colour, label, data) {
 }
 
 function renderEcologicalCategoryChart() {
+    let header = $('.ecological-chart-header');
+    try {
+        let headerLabel = `${riverEcoregionGroup['eco_region_1']['value']} - ${geomorphologicalGroup['geo_class']['value']}`;
+        header.html(headerLabel);
+    } catch (e) {
+    }
+
     let canvasChart = $('#ecological-category-chart');
     var options = {
         hover: {
@@ -447,7 +504,6 @@ function renderEcologicalCategoryChart() {
         tooltips: {
             callbacks: {
                 title: function (tooltipItems, data) {
-                    console.log(ecoregionChartDotsLabel);
                     let label = '-';
                     let dotIdentifier = tooltipItems[0]['xLabel'] + '-' + parseFloat(tooltipItems[0]['yLabel']).toFixed(2);
                     if (ecoregionChartDotsLabel.hasOwnProperty(dotIdentifier)) {
@@ -603,24 +659,51 @@ function onDownloadMapClicked(e) {
 }
 
 function renderLocationContextTable() {
-    let $table = $('.sass-info tbody');
-    // River catchments
-    $.each(riverCatchments, function (key, data) {
-        if (data['value']) {
-            $table.append('<tr>\n' +
-                '<th scope="row">' + data['name'] + '</th>' +
-                '<td>' + data['value'] + '</td>\n' +
-                '</tr>')
+    let $table = $('.sass-summary tbody');
+    let tableData = {
+        'Geomorphological zones': '-',
+        'Province': '-',
+        'Water Management Area': '-',
+        'Sub Water Management Area': '-',
+        'River Management Unit': '-',
+        'Primary Catchment': '-',
+        'Secondary Catchment': '-',
+        'Tertiary Catchment': '-',
+        'Quaternary Catchment': '-',
+        'SA Ecoregion': '-',
+        'National Critical Biodiversity': '-',
+    };
+    try {
+        tableData['Geomorphological zones'] = geomorphologicalGroup['geo_class_recoded']['value'];
+        tableData['SA Ecoregion'] = riverEcoregionGroup['eco_region_1']['value'];
+        tableData['National Critical Biodiversity'] = ecoGeoGroup['national_cba']['value'];
+    } catch (e) {
+    }
+
+    if (politicalBoundary) {
+        try {
+            tableData['Province'] = politicalBoundary['sa_provinces']['value'];
+        } catch (e) {
         }
+    }
+    
+    if (riverCatchments) {
+        try {
+            tableData['Primary Catchment'] = riverCatchments['primary_catchment_area']['value'];
+            tableData['Secondary Catchment'] = riverCatchments['secondary_catchment_area']['value'];
+            tableData['Tertiary Catchment'] = riverCatchments['tertiary_catchment_area']['value'];
+            tableData['Water Management Area'] = riverCatchments['water_management_area']['value'];
+            tableData['Quaternary Catchment'] = riverCatchments['quaternary_catchment_area']['value'];
+        } catch (e) {
+        }
+    }
+
+    $.each(tableData, function (key, value) {
+        $table.append('<tr>\n' +
+            '<th scope="row"> ' + key + ' </th>' +
+            '<td>' + value + '</td>\n' +
+            '</tr>');
     });
-    $.each(ecoGeoGroup, function (key, data) {
-        if (data['value']) {
-            $table.append('<tr>\n' +
-                '<th scope="row">' + data['name'] + '</th>' +
-                '<td>' + data['value'] + '</td>\n' +
-                '</tr>')
-        }
-    })
 }
 
 function renderMetricsData() {
@@ -664,6 +747,10 @@ $(function () {
     }
     $('.download-as-csv').click(onDownloadCSVClicked);
     $('.download-summary-as-csv').click(onDownloadSummaryCSVClicked);
+    $('.download-latest-as-csv').on('click', function () {
+        var filename = 'SASS_Taxa_per_biotope_' + sassLatestData;
+        exportTableToCSV(filename + '.csv', "sass-taxon-per-biotope-table")
+    });
 
     $('[data-toggle="tooltip"]').tooltip();
     $('.download-chart').click(onDownloadChartClicked);

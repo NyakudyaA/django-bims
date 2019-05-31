@@ -33,6 +33,7 @@
             const taxaNumbers = {{ sass_score_chart_data.taxa_numbers }};
             const asptList = {{ sass_score_chart_data.aspt_list }};
             const sassTaxonData = {{ sass_taxon_table_data.sass_taxon_data | safe }};
+            const sassLatestData = '{{ sass_taxon_table_data.site_visit_date }}';
             const biotopeData = {{ sass_taxon_table_data.biotope_data | safe }};
             const sensitivityChartData = {{ sensitivity_chart_data | safe }};
             const ecologicalChartData = {{ ecological_chart_data | safe }};
@@ -40,6 +41,9 @@
             const biotopeRatingLabels = {{ biotope_ratings_chart_data.biotope_labels | safe }};
             const riverCatchments = {% if river_catchments %}{{ river_catchments | safe }}{% else %}[]{% endif %};
             const ecoGeoGroup = {% if eco_geo %}{{ eco_geo | safe }}{% else %}[]{% endif %};
+            const riverEcoregionGroup = {% if eco_geo %}{{ river_ecoregion_group | safe }}{% else %}[]{% endif %};
+            const geomorphologicalGroup = {% if eco_geo %}{{ geomorphological_group | safe }}{% else %}[]{% endif %};
+            const politicalBoundary = {% if political_boundary %}{{ political_boundary | safe }}{% else %}[]{% endif %};
         </script>
         <div class="body-form container">
             <div class="logo hide-logo pull-right"><img width="50"
@@ -59,7 +63,7 @@
                     </div>
                     <div class="vertical-space"></div>
                     <div class="table-container">
-                        <table class="table table-striped">
+                        <table class="sass-summary table table-striped">
                             <tbody>
                             <tr>
                                 <th scope="row">FBIS Site Code</th>
@@ -72,6 +76,10 @@
                             <tr>
                                 <th scope="row">Site description</th>
                                 <td>{{ site_description }}</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">River</th>
+                                <td>{{ river }}</td>
                             </tr>
                             </tbody>
                         </table>
@@ -131,9 +139,14 @@
                             SASS Taxa per biotope
                             <span class="pull-right">
                             {{ sass_taxon_table_data.site_visit_date }}
+                            <i data-download-title="SASS Taxa per biotope - {{ sass_taxon_table_data.site_visit_date }}"
+                               data-toggle="tooltip" data-placement="left"
+                               title="Download table as PNG"
+                               class="fa fa-download pull-right download-icon download-table"></i>
                         </span>
                         </div>
-                        <table class="table table-condensed table-striped sass-taxon-per-biotope-table">
+                        <table id="sass-taxon-per-biotope-table"
+                               class="table table-condensed table-striped sass-taxon-per-biotope-table">
                             <thead>
                             <tr>
                                 <th>
@@ -153,8 +166,8 @@
                             </tbody>
                         </table>
                         <div class="download-container">
-                            Download all SASS data for this site :
-                            <button class="btn btn-info download-as-csv">
+                            Download latest SASS data for this site :
+                            <button class="btn btn-info download-latest-as-csv">
                                 Download as CSV
                             </button>
                         </div>
@@ -192,10 +205,20 @@
                             {% endfor %}
                             </tbody>
                         </table>
+                        <div class="download-container">
+                            Download all SASS data for this site :
+                            <button class="btn btn-info download-as-csv">
+                                Download as CSV
+                            </button>
+                        </div>
                     </div>
 
                 </div>
                 <div class="col-md-6 mp">
+                    <div class="chart-container">
+                        <img width="100%" src="{% static 'img/river.jpg' %}"/>
+                    </div>
+                    <div class="vertical-space"></div>
                     <div class="chart-container">
                         <div class="chart-title">SASS charts
                             <i data-download-title="SASS charts"
@@ -216,16 +239,17 @@
                                Tolerant (4 to 7),
                                Sensitive (8 to 11),
                                Highly sensitive (12 to 15)">
-                                Proportion of sensitive to tolerant
+                                Proportion of sensitive to tolerant taxa
                             </span>
-                            <i data-download-title="Proportion of sensitive to tolerant"
+                            <i data-download-title="Proportion of sensitive to tolerant taxa"
                                data-toggle="tooltip" data-placement="left"
                                title="Download chart"
                                class="fa fa-download pull-right download-icon download-chart"></i>
                         </div>
                         <canvas id="sensitivity-chart"></canvas>
                         <p style="padding-top: 15px; font-size: 11pt; margin-bottom: 0px; text-align: center">
-                            This chart shows the data for the latest SASS Record <span id="sc-latest-sass-record"></span>
+                            This chart shows the data for the latest SASS
+                            Record <span id="sc-latest-sass-record"></span>
                         </p>
                     </div>
                     <div class="vertical-space"></div>
@@ -241,6 +265,7 @@
                     <div class="vertical-space"></div>
                     <div class="chart-container">
                         <div class="chart-title">Ecological category</div>
+                        <div class="ecological-chart-header">-</div>
                         <canvas id="ecological-category-chart"></canvas>
                     </div>
                     <div class="vertical-space"></div>
@@ -287,6 +312,10 @@
                             <tr>
                                 <th scope="row">Site description</th>
                                 <td>{{ site_description }}</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">River</th>
+                                <td>{{ river }}</td>
                             </tr>
                             </tbody>
                         </table>

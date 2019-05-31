@@ -17,6 +17,7 @@ from sass.models import (
     SiteVisitChem,
     SassEcologicalCategory,
     SassEcologicalCondition,
+    SiteVisitEcologicalCondition,
 )
 
 
@@ -67,7 +68,14 @@ class SassBiotopeFractionAdmin(admin.ModelAdmin):
 class SassTaxonAdmin(admin.ModelAdmin):
     list_display = (
         'taxon',
-        'score'
+        'score',
+        'taxon_sass_4',
+        'taxon_sass_5'
+    )
+
+    search_fields = (
+        'taxon_sass_4',
+        'taxon_sass_5'
     )
 
 
@@ -163,6 +171,18 @@ class SassEcologicalConditionAdmin(admin.ModelAdmin):
     )
 
 
+class SiteVisitEcologicalConditionAdmin(admin.ModelAdmin):
+    list_display = (
+        'site_visit',
+        'ecological_condition',
+        'sass_score',
+        'aspt_score',
+    )
+    raw_id_fields = (
+        'site_visit',
+    )
+
+
 # Register your models here.
 admin.site.register(River, RiverAdmin)
 admin.site.register(SiteVisit, SiteVisitAdmin)
@@ -177,3 +197,6 @@ admin.site.register(Chem, ChemAdmin)
 admin.site.register(SiteVisitChem, SiteVisitChemAdmin)
 admin.site.register(SassEcologicalCategory, SassEcologicalCategoryAdmin)
 admin.site.register(SassEcologicalCondition, SassEcologicalConditionAdmin)
+admin.site.register(
+    SiteVisitEcologicalCondition,
+    SiteVisitEcologicalConditionAdmin)

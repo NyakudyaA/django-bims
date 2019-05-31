@@ -49,9 +49,6 @@ INSTALLED_APPS += (
     'bims.signals',
     'allauth',
     'allauth.account',
-    'allauth.socialaccount',
-    'allauth.socialaccount.providers.google',
-    'allauth.socialaccount.providers.github',
     'rolepermissions',
     'rest_framework',
     'celery',
@@ -61,6 +58,7 @@ INSTALLED_APPS += (
     'django_prometheus',
     'crispy_forms',
     'sass',
+    'rangefilter',
 )
 # workaround to get flatpages picked up in installed apps.
 INSTALLED_APPS += (
@@ -129,8 +127,6 @@ STATICFILES_DIRS = [
     absolute_path('sass', 'static'),
 ] + STATICFILES_DIRS
 
-INSTALLED_APPS = ensure_unique_app_labels(INSTALLED_APPS)
-
 MIDDLEWARE_CLASSES += (
     'django_prometheus.middleware.PrometheusBeforeMiddleware',
     'bims.middleware.VisitorTrackingMiddleware',
@@ -168,10 +164,27 @@ SOCIALACCOUNT_PROVIDERS = {
 ACCOUNT_UNIQUE_EMAIL = True
 ACCOUNT_USERNAME_REQUIRED = True
 ACCOUNT_EMAIL_REQUIRED = True
-# ACCOUNT_SIGNUP_FORM_CLASS = 'base.forms.SignupForm'
 ACCOUNT_AUTHENTICATION_METHOD = 'username_email'
 LOGIN_REDIRECT_URL = "/"
 
+AUTH_WITH_EMAIL_ONLY = ast.literal_eval(os.environ.get(
+        'AUTH_WITH_EMAIL_ONLY', 'False'))
+
+if AUTH_WITH_EMAIL_ONLY:
+    ACCOUNT_USERNAME_REQUIRED = False
+    ACCOUNT_FORMS = {
+        'signup': 'bims.forms.CustomSignupForm',
+    }
+    ACCOUNT_AUTHENTICATION_METHOD = 'email'
+else:
+    INSTALLED_APPS += (
+        'allauth.socialaccount',
+        'allauth.socialaccount.providers.google',
+        'allauth.socialaccount.providers.github',
+    )
+
+
+INSTALLED_APPS = ensure_unique_app_labels(INSTALLED_APPS)
 # ROLEPERMISSIONS_MODULE = 'roles.settings.roles'
 
 IUCN_API_URL = 'http://apiv3.iucnredlist.org/api/v3'
@@ -190,6 +203,7 @@ MODELSDOC_INCLUDE_AUTO_CREATED = True
 
 # contact us email
 CONTACT_US_EMAIL = os.environ.get('CONTACT_US_EMAIL', '')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', CONTACT_US_EMAIL)
 
 # site tracking stats settings
 TRACK_PAGEVIEWS = True
@@ -287,10 +301,10 @@ if ASYNC_SIGNALS_GEONODE and USE_GEOSERVER:
 # Set institutionID default value
 INSTITUTION_ID_DEFAULT = os.environ.get('INSTITUTION_ID_DEFAULT', 'bims')
 
-ACCOUNT_APPROVAL_REQUIRED = False
+ACCOUNT_APPROVAL_REQUIRED = True
 SOCIALACCOUNT_AUTO_SIGNUP = True
 ACCOUNT_ADAPTER = 'bims.adapters.account_adapter.AccountAdapter'
-ACCOUNT_EMAIL_VERIFICATION = 'mandatory'
+ACCOUNT_EMAIL_VERIFICATION = 'none'
 
 OGC_SERVER['default']['DATASTORE'] = os.environ.get(
         'DEFAULT_BACKEND_DATASTORE', '')
@@ -321,6 +335,12 @@ BIMS_PREFERENCES = {
     ),
     'enable_ecoregion_filter': ast.literal_eval(
         os.environ.get('ENABLE_ECOREGION_FILTER', 'False')
+    ),
+    'enable_user_boundary_filter': ast.literal_eval(
+        os.environ.get('ENABLE_USER_BOUNDARY_FILTER', 'False')
+    ),
+    'enable_download_data_from_map': ast.literal_eval(
+        os.environ.get('ENABLE_DOWNLOAD_DATA_FROM_MAP', 'False')
     ),
     'geoserver_location_site_layer': os.environ.get(
         'GEOSERVER_LOCATION_SITE_LAYER',

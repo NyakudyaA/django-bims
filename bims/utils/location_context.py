@@ -1,4 +1,3 @@
-import logging
 import hashlib
 import json
 from django.contrib.gis.db import models
@@ -8,8 +7,7 @@ from bims.models.location_site import (
 )
 from bims.models.spatial_scale import SpatialScale
 from bims.models.spatial_scale_group import SpatialScaleGroup
-
-logger = logging.getLogger('bims')
+from bims.utils.logger import log
 
 
 def array_to_dict(array, key_name='key'):
@@ -50,17 +48,12 @@ def process_spatial_scale_data(location_context_data, group=None):
                 continue
             spatial_type = 'select'
             spatial_query = context_group['value']
-            if isinstance(context_group['value'], (int, float)):
-                spatial_type = 'input'
-                spatial_query = context_group['key']
-                spatial_scale_group = group
-            else:
-                spatial_scale_group, created = (
-                    SpatialScaleGroup.objects.get_or_create(
-                        key=context_group['key'],
-                        name=context_group['name'],
-                        parent=group
-                    ))
+            spatial_scale_group, created = (
+                SpatialScaleGroup.objects.get_or_create(
+                    key=context_group['key'],
+                    name=context_group['name'],
+                    parent=group
+                ))
             spatial_scale, spatial_created = (
                 SpatialScale.objects.get_or_create(
                     group=spatial_scale_group,
@@ -90,11 +83,11 @@ def format_location_context(location_site_id, force_update=False):
             id=location_site_id
         )
     except LocationSite.DoesNotExist:
-        logger.debug('LocationSite Does Not Exist')
+        log('LocationSite Does Not Exist', 'debug')
         return
 
     if not location_site.location_context_document:
-        logger.debug('LocationSite context document does not exist')
+        log('LocationSite context document does not exist', 'debug')
         return
 
     location_context = json.loads(location_site.location_context_document)
@@ -107,13 +100,48 @@ def format_location_context(location_site_id, force_update=False):
         formatted_location_context = json.loads(
             location_site.location_context
         )
+
+        if not location_site.original_geomorphological:
+            try:
+                context_geo = formatted_location_context[
+                    'context_group_values'][
+                    'geomorphological_group']['service_registry_values'][
+                    'geo_class_recoded']['value']
+                models.signals.post_save.disconnect(
+                    location_site_post_save_handler,
+                )
+                location_site.original_geomorphological = context_geo
+                location_site.save()
+                models.signals.post_save.connect(
+                    location_site_post_save_handler,
+                )
+            except (KeyError, TypeError):
+                pass
+
         if 'hash' in formatted_location_context:
             if formatted_location_context['hash'] == hash_string:
                 process_spatial_scale_data(
                     formatted_location_context['context_group_values']
                 )
-                logger.info('Formatted location context already exist')
-                return
+                if location_site.refined_geomorphological:
+                    # Update geo value in geocontext data
+                    try:
+                        context_geo = formatted_location_context[
+                            'context_group_values'][
+                            'geomorphological_group'][
+                            'service_registry_values'][
+                            'geo_class_recoded']['value']
+                        if (
+                                context_geo ==
+                                location_site.refined_geomorphological):
+                            log('Formatted location context already exist')
+                            return
+                    except KeyError:
+                        log('Formatted location context already exist')
+                        return
+                else:
+                    log('Formatted location context already exist')
+                    return
 
     if not isinstance(location_context, dict):
         return
@@ -128,13 +156,33 @@ def format_location_context(location_site_id, force_update=False):
         location_site_post_save_handler,
     )
 
+    if not location_site.original_geomorphological:
+        try:
+            context_geo = formatted[
+                'context_group_values'][
+                'geomorphological_group']['service_registry_values'][
+                'geo_class_recoded']['value']
+            location_site.original_geomorphological = context_geo
+        except KeyError:
+            pass
+
+    if location_site.refined_geomorphological:
+        try:
+            formatted['context_group_values'][
+                'geomorphological_group']['service_registry_values'][
+                'geo_class_recoded']['value'] = (
+                location_site.refined_geomorphological
+            )
+        except KeyError:
+            pass
+
     process_spatial_scale_data(
         formatted['context_group_values']
     )
     formatted['hash'] = hash_string
     location_site.location_context = formatted
     location_site.save()
-    logger.info('Location context formatted')
+    log('Location context formatted', 'info')
 
     models.signals.post_save.connect(
         location_site_post_save_handler,

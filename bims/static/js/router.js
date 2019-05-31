@@ -11,7 +11,7 @@ define(['backbone', 'views/olmap', 'utils/events_connector', 'shared'], function
             "site-detail/:query": "showSiteDetailedDashboard",
             "species-detail/:query": "showSpeciesDetailedDashboard"
         },
-        initialize: function () {
+        initializeParameters: function () {
             this.parameters['taxon'] = '';
             this.parameters['months'] = '';
             this.parameters['siteId'] = '';
@@ -28,9 +28,15 @@ define(['backbone', 'views/olmap', 'utils/events_connector', 'shared'], function
             this.parameters['conservationStatus'] = '';
             this.parameters['spatialFilter'] = '';
             this.parameters['taxon'] = '';
+            this.parameters['validated'] = '';
+            this.parameters['modules'] = '';
+            this.parameters['sourceCollection'] = '';
             if (typeof filterParameters !== 'undefined') {
                 filterParameters = $.extend(true, {}, this.parameters);
             }
+        },
+        initialize: function () {
+            this.initializeParameters();
             this.map = new olmap();
             this.eventsConnector = new EventsConnector();
         },

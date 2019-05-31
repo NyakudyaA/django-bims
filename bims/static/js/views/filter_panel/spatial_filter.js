@@ -168,6 +168,7 @@ define([
                              '</div>');
                 $container.append(header);
                 header.after(self.renderSpatialChildren(spatialData['children']));
+                header.click();
             });
         },
         renderSpatialChildren: function (spatialData) {
@@ -363,9 +364,11 @@ define([
 
         },
         isOpen: function () {
+            console.log(this.$el.find('.map-control-panel-box'));
             return !this.$el.find('.map-control-panel-box').is(':hidden');
         },
         show: function () {
+            console.log(this.$el.find('.map-control-panel-box'));
             this.$el.find('.map-control-panel-box').show();
         },
         close: function () {
@@ -429,6 +432,13 @@ define([
             this.clearAllSelected(e);
             if (Shared.CurrentState.SEARCH) {
                 Shared.Dispatcher.trigger('search:doSearch');
+            }
+        },
+        highlight: function (state) {
+            if (state) {
+                this.$el.find('.subtitle').addClass('filter-panel-selected');
+            } else {
+                this.$el.find('.subtitle').removeClass('filter-panel-selected');
             }
         },
         subPanelClicked: function (e) {

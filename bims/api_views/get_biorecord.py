@@ -8,6 +8,7 @@ from django.db.models import Count, F
 from django.db.models.functions import ExtractYear
 from rest_framework import status
 from bims.models.biological_collection_record import BiologicalCollectionRecord
+from bims.models.iucn_status import IUCNStatus
 from bims.serializers.bio_collection_serializer import (
     BioCollectionSerializer,
     BioCollectionDetailSerializer,
@@ -17,7 +18,7 @@ from bims.utils.search_process import (
     create_search_process_file
 )
 from bims.models.search_process import TAXON_SUMMARY
-from bims.api_views.search_version_2 import SearchVersion2
+from bims.api_views.search import Search
 
 
 class GetBioRecordDetail(LoginRequiredMixin, APIView):
@@ -39,7 +40,7 @@ class GetBioRecords(APIView):
 
     def get(self, request):
         filters = request.GET
-        search = SearchVersion2(filters)
+        search = Search(filters)
 
         # Search collection
         collection_results = search.process_search()
@@ -61,7 +62,7 @@ class BioCollectionSummary(APIView):
 
     def get(self, request):
         filters = request.GET
-        search = SearchVersion2(filters)
+        search = Search(filters)
 
         search_process, created = get_or_create_search_process(
             TAXON_SUMMARY,
@@ -88,8 +89,12 @@ class BioCollectionSummary(APIView):
             year=ExtractYear('collection_date')).values('year').annotate(
             count=Count('year')).order_by('year')
         records_per_area = collection_results.annotate(
-            site_name=F('site__name')).values('site_name').annotate(
-            count=Count('site_name')
+            site_name=F('site__name')
+        ).values('site_name').annotate(
+            count=Count('site_name'),
+            site_code=F('site__site_code'),
+            site_id=F('site__id'),
+            river=F('site__river__name')
         )
 
         taxonomy = collection_results[0].taxonomy
@@ -102,7 +107,7 @@ class BioCollectionSummary(APIView):
         iucn_status = None
         if taxonomy.iucn_status:
             iucn_status = taxonomy.iucn_status.category
-
+        response_data['iucn_id'] = taxonomy.iucn_redlist_id
         response_data['taxon'] = taxonomy.scientific_name
         response_data['gbif_id'] = taxonomy.gbif_key
         response_data['total_records'] = len(collection_results)
@@ -119,6 +124,9 @@ class BioCollectionSummary(APIView):
         response_data['sites_raw_query'] = search_process.process_id
         response_data['process_id'] = search_process.process_id
         response_data['extent'] = search.extent()
+        response_data['origin_choices_list'] = (
+            BiologicalCollectionRecord.CATEGORY_CHOICES)
+        response_data['iucn_choice_list'] = IUCNStatus.CATEGORY_CHOICES
 
         taxonomy_rank = {
             taxonomy.rank: taxonomy.scientific_name
@@ -126,11 +134,24 @@ class BioCollectionSummary(APIView):
         taxonomy_parent = taxonomy.parent
         while taxonomy_parent:
             taxonomy_rank[taxonomy_parent.rank] = (
-                taxonomy_parent.scientific_name
+                taxonomy_parent.canonical_name
             )
             taxonomy_parent = taxonomy_parent.parent
         response_data['taxonomy_rank'] = taxonomy_rank
 
+        common_names = []
+        # Common name
+        if taxonomy.vernacular_names.filter(language='eng').exists():
+            common_names = list(
+                taxonomy.vernacular_names.all().filter(language='eng').values()
+            )
+        elif taxonomy.vernacular_names.all().values().exists():
+            common_names = list(taxonomy.vernacular_names.all().values())
+        if len(common_names) == 0:
+            response_data['common_name'] = 'Unknown'
+        else:
+            response_data['common_name'] = str(
+                common_names[0]['name']).capitalize()
         file_path = create_search_process_file(
             data=response_data,
             search_process=search_process,

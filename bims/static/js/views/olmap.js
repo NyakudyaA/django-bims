@@ -16,6 +16,7 @@ define([
     'views/right_panel/location_site_detail',
     'views/right_panel/taxon_detail',
     'views/right_panel/records_detail',
+    'views/right_panel/multiple_location_sites_details',
     'views/biodiversity_legend',
     'views/detail_dashboard/taxon_detail',
     'views/detail_dashboard/site_detail',
@@ -23,7 +24,7 @@ define([
 ], function (Backbone, _, Shared, LocationSiteCollection, ClusterCollection,
              ClusterBiologicalCollection, MapControlPanelView, SidePanelView,
              ol, $, LayerSwitcher, Basemap, Layers, Geocontext,
-             LocationSiteDetail, TaxonDetail, RecordsDetail, BioLegendView,
+             LocationSiteDetail, TaxonDetail, RecordsDetail, MultipleLocationSitesDetail, BioLegendView,
              TaxonDetailDashboard, SiteDetailedDashboard, HtmlToCanvas) {
     return Backbone.View.extend({
         template: _.template($('#map-template').html()),
@@ -39,7 +40,7 @@ define([
         numInFlightTiles: 0,
         scaleLineControl: null,
         mapIsReady: false,
-        initCenter: [22.937506, -30.559482],
+        initCenter: [22.948492328125, -31.12543669218031],
         events: {
             'click .zoom-in': 'zoomInMap',
             'click .zoom-out': 'zoomOutMap',
@@ -64,6 +65,7 @@ define([
             new LocationSiteDetail();
             new TaxonDetail();
             new RecordsDetail();
+            new MultipleLocationSitesDetail();
             this.taxonDetailDashboard = new TaxonDetailDashboard();
             this.siteDetailedDashboard = new SiteDetailedDashboard({parent: this});
 
@@ -167,9 +169,8 @@ define([
                     0, $('.right-panel').width(), 0, 250
                 ]
             });
-            this.map.getView().setZoom(this.getCurrentZoom());
-            if (this.getCurrentZoom() > 18) {
-                this.map.getView().setZoom(18);
+            if (this.map.getView().getZoom() > 8) {
+                this.map.getView().setZoom(8);
             }
         },
         mapClicked: function (e) {
@@ -215,8 +216,10 @@ define([
                         $.ajax({
                             url: '/api/get-site-by-coord/?lon=' + lon + '&lat=' + lat + '&radius=10',
                             success: function (data) {
-                                if (data.length > 0) {
-                                    Shared.Dispatcher.trigger('siteDetail:show', data[0]['id'], data[0]['name']);
+                                if (self.uploadDataState) {
+                                    self.mapControlPanel.showUploadDataModal(lon, lat, data[0]);
+                                } else if (data.length > 0) {
+                                    Shared.Dispatcher.trigger('siteDetail:show', data[0]['id'], data[0]['site_code']);
                                 }
                             }
                         });
@@ -581,8 +584,8 @@ define([
                         0, $('.right-panel').width(), 0, 250
                     ]
                 });
-                if (this.getCurrentZoom() > 18) {
-                    this.map.getView().setZoom(18);
+                if (this.getCurrentZoom() > 8) {
+                    this.map.getView().setZoom(8);
                 }
             }
         },

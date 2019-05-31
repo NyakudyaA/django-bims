@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 @shared_task(name='bims.tasks.search_task', queue='update')
 def search_task(parameters, search_process_id):
     from bims.utils.celery import memcache_lock
-    from bims.api_views.search_version_2 import SearchVersion2
+    from bims.api_views.search import Search
     from bims.models.search_process import (
         SearchProcess,
         SEARCH_PROCESSING,
@@ -31,7 +31,7 @@ def search_task(parameters, search_process_id):
         if acquired:
             search_process.set_status(SEARCH_PROCESSING)
 
-            search = SearchVersion2(parameters)
+            search = Search(parameters)
             search_results = search.get_summary_data()
             if search_results:
                 search_process.set_search_raw_query(
@@ -40,6 +40,7 @@ def search_task(parameters, search_process_id):
                 search_process.create_view()
                 search_process.set_status(SEARCH_FINISHED, False)
                 search_results['status'] = SEARCH_FINISHED
+                search_results['extent'] = search.extent()
                 search_process.save_to_file(search_results)
             else:
                 search_process.set_status(SEARCH_FAILED)

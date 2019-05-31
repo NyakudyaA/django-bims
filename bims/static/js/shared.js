@@ -1,7 +1,7 @@
 /*global define*/
 'use strict';
 
-define(['backbone', 'underscore', 'utils/storage'], function (Backbone, _, StorageUtil) {
+define(['backbone', 'underscore', 'utils/storage', 'utils/color'], function (Backbone, _, StorageUtil, ColorUtil) {
     return {
         SearchURLParametersTemplate: "?taxon=<%= taxon %>&search=<%= search %>&siteId=<%= siteId %>" +
             "&collector=<%= collector %>&category=<%= category %>" +
@@ -9,20 +9,25 @@ define(['backbone', 'underscore', 'utils/storage'], function (Backbone, _, Stora
             "&boundary=<%= boundary %>&userBoundary=<%= userBoundary %>" +
             "&referenceCategory=<%= referenceCategory %>" +
             "&spatialFilter=<%= spatialFilter %>" +
-            "&reference=<%= reference %>&endemic=<%= endemic %>&conservationStatus=<%= conservationStatus %>",
+            "&reference=<%= reference %>&endemic=<%= endemic %>&conservationStatus=<%= conservationStatus %>" +
+            "&modules=<%= modules %>&validated=<%= validated %>&sourceCollection=<%= sourceCollection %>",
         LocationSiteDetailXHRRequest: null,
+        MultiSitesOverviewXHRRequest: null,
         TaxonDetailXHRRequest: null,
         GetFeatureXHRRequest: [],
         Dispatcher: _.extend({}, Backbone.Events),
         Router: {},
         ClusterSize: 30,
+        FishModuleID: null,
         StorageUtil: new StorageUtil(),
+        ColorUtil: new ColorUtil(),
         UserBoundaries: {},
         UserBoundarySelected: [],
         PoliticalRegionBoundaries: null,
         AdminAreaSelected: [],
         LegendsDisplayed: false,
         GetFeatureRequested: false,
+        EndemismList: [],
         CurrentState: {
             FETCH_CLUSTERS: false,
             SEARCH: false,

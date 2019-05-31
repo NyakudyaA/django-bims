@@ -1,4 +1,5 @@
 import json
+from collections import OrderedDict
 from django.views.generic import TemplateView
 from django.shortcuts import get_object_or_404
 from django.http import Http404
@@ -8,7 +9,8 @@ from django.db.models import (
 )
 from django.db.models.functions import Cast, Coalesce
 from bims.models.location_site import LocationSite
-from bims.api_views.search_version_2 import SearchVersion2
+from bims.enums.taxonomic_group_category import TaxonomicGroupCategory
+from bims.api_views.search import Search
 from sass.models import (
     SiteVisitTaxon,
     SiteVisitBiotopeTaxon,
@@ -24,7 +26,7 @@ class SassDashboardView(TemplateView):
 
     def get_site_visit_taxon(self):
         filters = self.request.GET
-        search = SearchVersion2(filters)
+        search = Search(filters)
         collection_records = search.process_search()
         self.site_visit_taxa = SiteVisitTaxon.objects.filter(
             id__in=collection_records
@@ -36,13 +38,19 @@ class SassDashboardView(TemplateView):
             date=F('site_visit__site_visit_date'),
         ).values('date').annotate(
             count=Count('sass_taxon'),
-            sass_score=Sum(Case(
+            sass_score=Coalesce(Sum(Case(
                 When(
                     condition=Q(site_visit__sass_version=5,
-                                sass_taxon__sass_5_score__isnull=False),
+                                sass_taxon__sass_5_score__isnull=False,
+                                taxon_abundance__isnull=False),
                     then='sass_taxon__sass_5_score'),
-                default='sass_taxon__score'
-            )),
+                When(
+                    condition=Q(site_visit__sass_version=4,
+                                sass_taxon__score__isnull=False,
+                                taxon_abundance__isnull=False),
+                    then='sass_taxon__score'),
+                default=0),
+            ), 0),
             sass_id=F('site_visit__id')
         ).annotate(
             aspt=Cast(F('sass_score'), FloatField()) / Cast(F('count'),
@@ -70,15 +78,12 @@ class SassDashboardView(TemplateView):
         )
         sass_taxon_data = (
             self.site_visit_taxa.filter(
-                site_visit=latest_site_visit
+                site_visit=latest_site_visit,
+                taxonomy__taxongroup__category=(
+                    TaxonomicGroupCategory.SASS_TAXON_GROUP.name
+                )
             ).annotate(
-                sass_taxon_name=Case(
-                    When(
-                        condition=Q(site_visit__sass_version=5,
-                                    sass_taxon__taxon_sass_5__isnull=False),
-                        then='sass_taxon__taxon_sass_5'),
-                    default='sass_taxon__taxon_sass_4'
-                ),
+                sass_taxon_name=F('sass_taxon__taxon_sass_4'),
                 sass_score=Case(
                     When(
                         condition=Q(site_visit__sass_version=5,
@@ -232,21 +237,40 @@ class SassDashboardView(TemplateView):
         try:
             location_context = json.loads(self.location_site.location_context)
             eco_region = (
-                location_context['context_group_values']['eco_geo_group'][
-                    'service_registry_values']['eco_region']['value'].encode(
+                location_context['context_group_values'][
+                    'river_ecoregion_group'][
+                    'service_registry_values']['eco_region_1']['value'].encode(
                     'utf-8')
             )
             geo_class = (
-                location_context['context_group_values']['eco_geo_group'][
+                location_context['context_group_values'][
+                    'geomorphological_group'][
                     'service_registry_values']['geo_class']['value'].encode(
                     'utf-8')
             )
+
+            # Fix eco_region name
+            eco_region_splits = eco_region.split(' ')
+            if eco_region_splits[0].isdigit():
+                eco_region_splits.pop(0)
+                eco_region = ' '.join(eco_region_splits)
+
             ecological_conditions = SassEcologicalCondition.objects.filter(
-                ecoregion_level_1__icontains=eco_region,
-                geomorphological_zone__icontains=geo_class
+                ecoregion_level_1__icontains=eco_region.strip(),
+                geomorphological_zone__icontains=geo_class.strip()
             )
 
+            use_combined_geo = False
             if not ecological_conditions:
+                use_combined_geo = True
+            if (
+                    not use_combined_geo and
+                    not ecological_conditions.filter(
+                        sass_score_precentile__isnull=False,
+                        aspt_score_precentile__isnull=False).exists()
+            ):
+                use_combined_geo = True
+            if use_combined_geo:
                 # check Combined data
                 geo_class = 'combined'
                 ecological_conditions = SassEcologicalCondition.objects.filter(
@@ -285,6 +309,27 @@ class SassDashboardView(TemplateView):
             pass
         return chart_data
 
+    def ordering_catchment_data(self, river_catchment):
+        display_order = {
+            'primary_catchment_area': 0,
+            'secondary_catchment_area': 1,
+            'tertiary_catchment_area': 2,
+            'quaternary_catchment_area': 3,
+            'quinary_catchment_area': 4,
+        }
+
+        for key, value in river_catchment.items():
+            if value['key'] not in display_order:
+                value['display_order'] = 5
+            else:
+                value['display_order'] = display_order[value['key']]
+
+        ordered_dict = OrderedDict(
+            sorted(
+                river_catchment.items(),
+                key=lambda (k, v): (v['display_order'], k)))
+        return ordered_dict
+
     def get_context_data(self, **kwargs):
         context = super(SassDashboardView, self).get_context_data(**kwargs)
         self.get_site_visit_taxon()
@@ -294,7 +339,11 @@ class SassDashboardView(TemplateView):
         ]
         context['site_code'] = self.location_site.site_code
         context['site_id'] = self.location_site.id
-        context['site_description'] = self.location_site.site_description
+        site_description = self.location_site.site_description
+        if not site_description:
+            site_description = self.location_site.name
+        context['site_description'] = site_description
+        context['river'] = self.location_site.river.name
 
         if not self.site_visit_taxa:
             context['sass_exists'] = False
@@ -317,22 +366,31 @@ class SassDashboardView(TemplateView):
                 flat=True
             ).distinct())
 
-        try:
-            location_context = json.loads(self.location_site.location_context)
-            context['river_catchments'] = (
-                json.dumps(
-                    location_context['context_group_values'][
-                        'water_group']['service_registry_values']
-                )
-            )
-            context['eco_geo'] = (
-                json.dumps(
-                    location_context['context_group_values'][
-                        'eco_geo_group']['service_registry_values']
-                )
-            )
-        except (KeyError, TypeError):
-            pass
+        river_catchments = self.location_site.location_context_group_values(
+            'water_group'
+        )
+        river_catchments = self.ordering_catchment_data(river_catchments)
+        context['river_catchments'] = json.dumps(river_catchments)
+        context['river_ecoregion_group'] = (
+            json.dumps(self.location_site.location_context_group_values(
+                'river_ecoregion_group'
+            ))
+        )
+        context['political_boundary'] = (
+            json.dumps(self.location_site.location_context_group_values(
+                'political_boundary_group'
+            ))
+        )
+        context['geomorphological_group'] = (
+            json.dumps(self.location_site.location_context_group_values(
+                'geomorphological_group'
+            ))
+        )
+        context['eco_geo'] = (
+            json.dumps(self.location_site.location_context_group_values(
+                'eco_geo_group'
+            ))
+        )
 
         return context
 

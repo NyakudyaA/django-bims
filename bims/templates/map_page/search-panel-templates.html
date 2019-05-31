@@ -45,15 +45,52 @@
                 </div>
             </div>
             <div class="row module-filters" style="display: none;"
-                 data-toggle="tooltip" data-placement="top" title="Coming Soon">
-                <div class="col-lg-4 not-ready"><img
-                        src="/static/img/fish-2.svg"></div>
-                <div class="col-lg-4 not-ready"><img
-                        src="/static/img/invertebras-2.svg"></div>
-                <div class="col-lg-4 not-ready"><img
-                        src="/static/img/algae-2.svg"></div>
+                 data-toggle="tooltip" data-placement="top">
             </div>
         {% endif %}
+
+        <div class="row sub-filter">
+            <div class="col-lg-12 subtitle">
+                VALIDATION STATUS <i
+                    class="fa fa-angle-up pull-right filter-icon-arrow"></i><i
+                    class="fa fa-angle-down pull-right filter-icon-arrow"></i>
+            </div>
+        </div>
+        <div class="row validation-filter-row" style="display: none">
+            <div class="col-lg-12 filter-content">
+                <div><input id="filter-validation-validated"
+                            name="filter-validation" type="checkbox"
+                            value="validated" checked> <label class="checkbox-label" for="filter-validation-validated">Validated</label>
+                </div>
+                <div><input id="filter-validation-non-validated" name="filter-validation" type="checkbox"
+                            value="non validated"> <label class="checkbox-label" for="filter-validation-non-validated">Non validated</label>
+                </div>
+                {% if is_sass_enabled %}
+                    <div>
+                        <input id="filter-validation-sass-acredited" name="filter-validation" type="checkbox"
+                            value="sass accredited">
+                        <label class="checkbox-label" for="filter-validation-sass-acredited">SASS Accredited</label>
+                    </div>
+                    <div>
+                        <input id="filter-validation-non-sass-acredited" name="filter-validation" type="checkbox"
+                            value="non sass accredited">
+                        <label class="checkbox-label" for="filter-validation-non-sass-acredited">Non SASS Accredited</label>
+                    </div>
+                {% endif %}
+                <div id="filter-validation-error">Please tick at least one
+                    filter.
+                </div>
+            </div>
+
+            <div class="button-filter-wrapper">
+                <button class="apply-filter"><i class="fa fa-check"
+                                                aria-hidden="true"></i> Apply
+                </button>
+                <button class="clear-filter"><i class="fa fa-times"
+                                                aria-hidden="true"></i> Clear
+                </button>
+            </div>
+        </div>
 
         <div class="row sub-filter">
             <div class="col-lg-12 subtitle" id="date-filter-subtitle">
@@ -62,7 +99,7 @@
                     class="fa fa-angle-down pull-right filter-icon-arrow"></i>
             </div>
         </div>
-        <div class="row" style="display: none">
+        <div class="row temporal-scale-row" style="display: none">
             <div class="slide-container" style="padding-bottom: 10px">
                 <div>YEAR</div>
                 <div class="year-indicator">
@@ -73,8 +110,8 @@
                 <div>MONTH</div>
                 <table id="month-selector" style="width:100%">
                 </table>
-                <button class="apply-filter">Apply Filter</button>
-                <button class="clear-filter">Clear Filter</button>
+                <button class="apply-filter"><i class="fa fa-check" aria-hidden="true"></i> Apply</button>
+                <button class="clear-filter"><i class="fa fa-times" aria-hidden="true"></i> Clear</button>
             </div>
         </div>
 
@@ -139,8 +176,8 @@
             <div class="col-lg-12 filter-content" id="filter-category">
             </div>
             <div class="button-filter-wrapper">
-                <button class="apply-filter">Apply Filter</button>
-                <button class="clear-filter clear-origin-filter">Clear Filter</button>
+                <button class="apply-filter"><i class="fa fa-check" aria-hidden="true"></i> Apply</button>
+                <button class="clear-filter clear-origin-filter"><i class="fa fa-times" aria-hidden="true"></i> Clear</button>
             </div>
         </div>
 
@@ -152,7 +189,7 @@
                         class="fa fa-angle-down pull-right filter-icon-arrow"></i>
                 </div>
             </div>
-            <div class="row" style="display: none">
+            <div class="row conservation-status-row" style="display: none">
                 <div class="col-lg-12 filter-content conservation-status-wrapper form-group">
                     <select multiple  data-placeholder="Select Some Conservation Status" id="conservation-status">
                         {% for status_data in conservation_status_data %}
@@ -161,9 +198,8 @@
                     </select>
                 </div>
                 <div class="button-filter-wrapper">
-                    <button class="apply-filter">Apply Filter</button>
-                    <button class="clear-filter clear-conservation-filter">Clear
-                        Filter
+                    <button class="apply-filter"><i class="fa fa-check" aria-hidden="true"></i> Apply</button>
+                    <button class="clear-filter clear-conservation-filter"><i class="fa fa-times" aria-hidden="true"></i> Clear
                     </button>
                 </div>
                 <div class="small-space"></div>
@@ -186,8 +222,8 @@
                         multiple>
                 </select>
                 <div class="button-filter-wrapper">
-                    <button class="apply-filter">Apply Filter</button>
-                    <button class="clear-filter">Clear Filter</button>
+                    <button class="apply-filter"><i class="fa fa-check" aria-hidden="true"></i> Apply</button>
+                    <button class="clear-filter"><i class="fa fa-times" aria-hidden="true"></i> Clear</button>
                 </div>
             </div>
         </div>
@@ -206,14 +242,37 @@
                         multiple>
                 </select>
                 <div class="button-filter-wrapper">
-                    <button class="apply-filter">Apply Filter</button>
-                    <button class="clear-filter">Clear Filter</button>
+                    <button class="apply-filter"><i class="fa fa-check" aria-hidden="true"></i> Apply</button>
+                    <button class="clear-filter"><i class="fa fa-times" aria-hidden="true"></i> Clear</button>
                 </div>
             </div>
         {% endif %}
-    </div>
+
+         <div class="source-collection-wrapper"></div>
+
+        </div>
 </script>
 
+
+<script type="text/html" id="source-collection-template">
+        <div class="study-reference-wrapper">
+            <div class="row sub-filter">
+                <div class="col-lg-12 subtitle">
+                     DATA SOURCES <i
+                        class="fa fa-angle-up pull-right filter-icon-arrow"></i><i
+                        class="fa fa-angle-down pull-right filter-icon-arrow"></i>
+                </div>
+            </div>
+            <div class="row" style="display: none">
+                <div class="col-lg-12 filter-content data-source-list">
+                </div>
+                <div class="button-filter-wrapper">
+                    <button class="apply-filter"><i class="fa fa-check" aria-hidden="true"></i> Apply</button>
+                    <button class="clear-filter"><i class="fa fa-times" aria-hidden="true"></i> Clear</button>
+                </div>
+            </div>
+        </div>
+</script>
 
 <script type="text/html" id="reference-category-template">
     <div class="row sub-filter">
@@ -227,8 +286,8 @@
         <div class="col-lg-12 filter-content reference-category">
         </div>
         <div class="button-filter-wrapper">
-            <button class="apply-filter">Apply Filter</button>
-            <button class="clear-filter">Clear Filter</button>
+            <button class="apply-filter"><i class="fa fa-check" aria-hidden="true"></i> Apply</button>
+            <button class="clear-filter"><i class="fa fa-times" aria-hidden="true"></i> Clear</button>
         </div>
     </div>
 </script>
@@ -290,13 +349,13 @@
         </div>
         {% endif %}
         <div class="spatial-scale-action">
-            <button class="spatial-scale-apply-filter" disabled>Apply Filter
+            <button class="spatial-scale-apply-filter" disabled><i class="fa fa-check" aria-hidden="true"></i> Apply
             </button>
-            <button class="spatial-scale-clear-filter" disabled>Clear Filter
+            <button class="spatial-scale-clear-filter" disabled><i class="fa fa-times" aria-hidden="true"></i> Clear
             </button>
         </div>
     </div>
-    {% if user.is_authenticated %}
+    {% if user.is_authenticated and bims_preferences.enable_user_boundary_filter %}
         <div class="row sub-filter">
             <div class="col-lg-12 subtitle">
                 USER BOUNDARY
@@ -312,8 +371,8 @@
             <div class="row boundary-list">
             </div>
             <div class="row boundary-action">
-                <button class="spatial-apply-filter">Apply Filter</button>
-                <button class="spatial-clear-filter">Clear Filter</button>
+                <button class="spatial-apply-filter"><i class="fa fa-check" aria-hidden="true"></i> Apply</button>
+                <button class="spatial-clear-filter"><i class="fa fa-times" aria-hidden="true"></i> Clear</button>
             </div>
         </div>
     {% endif %}
@@ -442,12 +501,14 @@
                 <i class="fa fa-check" aria-hidden="true"></i>
             </div>
         {% endif %}
+        {% if bims_preferences.enable_download_data_from_map %}
         <div id="download-control" class="download-control sub-control-panel"
         data-toggle="popover"
              data-placement="right" data-trigger="hover"
              data-content="Download Data">
             <i class="fa fa-download" aria-hidden="true"></i>
         </div>
+        {% endif %}
         <div id="print-control" class="print-map-control sub-control-panel"
              data-toggle="popover"
              data-placement="right" data-trigger="hover"
@@ -771,12 +832,7 @@
     </div>
 </script>
 
-<script type="text/template" id="site-detail-registry-values">
-    <div class="result-search" data-search-result-id="">
-        <p class="group-title"><%= name %></p>
-        <a class="group-description"><%= value %></a>
-    </div>
-</script>
+
 
 <script type="text/template" id="search-result-sub-title">
     <div class="search-result-sub-title search-results-total"

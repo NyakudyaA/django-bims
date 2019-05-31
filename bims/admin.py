@@ -1,9 +1,11 @@
 # coding=utf-8
 from datetime import timedelta
+from datetime import date
 import json
 from pygments import highlight
 from pygments.lexers.data import JsonLexer
 from pygments.formatters.html import HtmlFormatter
+from rangefilter.filter import DateRangeFilter
 
 from django.contrib.admin import SimpleListFilter
 from django import forms
@@ -11,11 +13,12 @@ from django.utils.safestring import mark_safe
 from django.contrib.gis import admin
 from django.contrib import admin as django_admin
 from django.core.mail import send_mail
-
+from django.utils.translation import ugettext_lazy as _
 from django.contrib.auth.models import Permission
 from django.contrib.flatpages.admin import FlatPageAdmin
 from django.contrib.flatpages.models import FlatPage
 from django.db import models
+from django.utils.html import format_html
 
 from geonode.people.admin import ProfileAdmin
 from geonode.people.forms import ProfileCreationForm
@@ -56,7 +59,8 @@ from bims.models import (
     DataSource,
     SpatialScale,
     SpatialScaleGroup,
-    SamplingMethod
+    SamplingMethod,
+    SiteImage
 )
 
 from bims.conf import TRACK_PAGEVIEWS
@@ -101,17 +105,24 @@ class LocationSiteAdmin(admin.GeoModelAdmin):
     default_lat = -30
     default_lon = 25
 
-    readonly_fields = ('location_context_prettified', 'boundary')
+    readonly_fields = (
+        'location_context_prettified',
+        'original_geomorphological')
 
     list_display = (
-        'name', 'location_type', 'get_centroid', 'has_location_context')
-    search_fields = ('name',)
+        'name',
+        'site_code',
+        'location_type',
+        'get_centroid',
+        'has_location_context')
+    search_fields = ('name', 'site_code', 'legacy_site_code')
     list_filter = (HasLocationContextDocument,)
+    raw_id_fields = ('river', )
 
     actions = ['update_location_context', 'delete_location_context']
 
     def get_readonly_fields(self, request, obj=None):
-        return ['longitude', 'latitude']
+        return ['longitude', 'latitude', 'original_geomorphological']
 
     def has_location_context(self, obj):
         return bool(obj.location_context_document)
@@ -248,7 +259,10 @@ class CarouselHeaderAdmin(OrderedModelAdmin):
 
 
 class BiologicalCollectionAdmin(admin.ModelAdmin):
-    list_filter = ('taxonomy', 'collection_date', 'category')
+    class Media:
+        css = {
+            'all': ('admin/custom-admin.css',)
+        }
     list_display = (
         'taxonomy',
         'category',
@@ -257,6 +271,21 @@ class BiologicalCollectionAdmin(admin.ModelAdmin):
         'is_rejected',
         'collector',
         'owner',
+    )
+    raw_id_fields = (
+        'site',
+        'owner',
+        'taxonomy'
+    )
+    list_filter = (
+        ('collection_date', DateRangeFilter),
+        'taxonomy',
+        'category'
+    )
+    search_fields = (
+        'taxonomy__scientific_name',
+        'taxonomy__canonical_name',
+        'original_species_name'
     )
 
 
@@ -308,6 +337,8 @@ admin.site.register(Link, LinkAdmin)
 
 
 class ProfileInline(admin.StackedInline):
+    classes = ('grp-collapse grp-open',)
+    inline_classes = ('grp-collapse grp-open',)
     model = BimsProfile
 
 
@@ -321,11 +352,42 @@ class UserCreateForm(ProfileCreationForm):
         self.fields['email'].required = True
 
 
+class SassAccreditedStatusFilter(SimpleListFilter):
+    title = 'Sass accredited status'
+    parameter_name = 'sass_accredited'
+
+    def lookups(self, request, model_admin):
+        return [
+            (True, 'Accredited'),
+            (False, 'Not accredited')
+        ]
+
+    def queryset(self, request, queryset):
+        if self.value() == 'True':
+            return queryset.filter(
+                bims_profile__sass_accredited_date_to__gte=date.today()
+            )
+        elif self.value() == 'False':
+            return queryset.filter(
+                bims_profile__sass_accredited_date_to__lte=date.today()
+            )
+        return queryset
+
+
 # Inherits from GeoNode's ProfileAdmin page
 class CustomUserAdmin(ProfileAdmin):
     add_form = UserCreateForm
+    fieldsets = (
+        (None, {'fields': ('username', 'password')}),
+        (_('Personal info'), {'fields': (
+            'first_name', 'last_name', 'email', 'organization')}),
+        ('Profiles',
+         {'classes': ('placeholder bims_profile-group',), 'fields': ()}),
+        (_('Permissions'), {'fields': ('is_active', 'is_staff', 'is_superuser',
+                                       'groups')}),
+        (_('Important dates'), {'fields': ('last_login', 'date_joined')}),
+    )
     inlines = [ProfileInline]
-
     add_fieldsets = (
         (None, {
             'classes': ('wide',),
@@ -334,6 +396,40 @@ class CustomUserAdmin(ProfileAdmin):
                        'groups',),
         }),
     )
+    list_display = (
+        'username',
+        'email',
+        'first_name',
+        'last_name',
+        'is_staff',
+        'is_active',
+        'sass_accredited_status'
+    )
+    list_filter = (
+        'is_staff',
+        'is_superuser',
+        'is_active',
+        'groups',
+        SassAccreditedStatusFilter
+    )
+
+    def sass_accredited_status(self, obj):
+        false_response = format_html(
+            '<img src="/static/admin/img/icon-no.svg" alt="False">')
+        true_response = format_html(
+                '<img src="/static/admin/img/icon-yes.svg" alt="True">')
+        try:
+            profile = BimsProfile.objects.get(user=obj)
+            valid_to = profile.sass_accredited_date_to
+            if not valid_to:
+                return '-'
+            # Check if it is still valid
+            if date.today() > valid_to:
+                return false_response
+            else:
+                return true_response
+        except BimsProfile.DoesNotExist:
+            return '-'
 
     def save_model(self, request, obj, form, change):
         if obj.pk is None:
@@ -493,7 +589,8 @@ class SassBiotopeAdmin(admin.ModelAdmin):
     list_display = (
         'name',
         'display_order',
-        'biotope_form'
+        'biotope_form',
+        'taxon_group',
     )
     list_filter = (
         'name',
@@ -519,6 +616,12 @@ class SpatialScaleAdmin(admin.ModelAdmin):
         'type',
         'group'
     )
+    list_filter = (
+        'group',
+    )
+    search_fields = (
+        'query',
+    )
 
 
 class SpatialScaleGroupAdmin(admin.ModelAdmin):
@@ -532,6 +635,13 @@ class SamplingMethodAdmin(admin.ModelAdmin):
     list_display = (
         'sampling_method',
         'effort_measure'
+    )
+
+
+class SiteImageAdmin(admin.ModelAdmin):
+    list_display = (
+        'site',
+        'image'
     )
 
 
@@ -576,6 +686,7 @@ admin.site.register(Biotope, SassBiotopeAdmin)
 admin.site.register(SpatialScale, SpatialScaleAdmin)
 admin.site.register(SpatialScaleGroup, SpatialScaleGroupAdmin)
 admin.site.register(SamplingMethod, SamplingMethodAdmin)
+admin.site.register(SiteImage, SiteImageAdmin)
 
 # Hide upload files from geonode in admin
 admin.site.unregister(Upload)

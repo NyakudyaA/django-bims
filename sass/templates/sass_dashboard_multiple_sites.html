@@ -33,7 +33,18 @@
         <div class="logo hide-logo pull-right"><img width="50"
                                                     src="{% static 'img/bims-stamp.png' %}">
         </div>
-        <h2 class="dashboard-title">SASS Dashboard</h2>
+        <h2 class="dashboard-title">SASS Dashboard Multiple Sites
+
+            <span id="current_page"></span><span id="total_pages"></span></h2>
+
+        <nav aria-label="Page navigation example">
+            <ul class="pagination">
+                <li class="page-item disabled previous-pagination"><a class="page-link"
+                                         href="#">Previous</a></li>
+                <li class="page-item next-pagination disabled"><a class="page-link" href="#">Next</a>
+                </li>
+            </ul>
+        </nav>
         <div class="row">
             <div class="col-md-7">
                 <div class="map-container ajax-container">
@@ -76,14 +87,13 @@
                     </div>
                     <div class="row no-padding">
                         <div class="col-md-4">
-                            <canvas id="sass-score-chart"
-                                    style="position: relative;"></canvas>
+                            <canvas id="sass-score-chart-multiple"></canvas>
                         </div>
                         <div class="col-md-4">
-                            <canvas id="taxa-numbers-chart"></canvas>
+                            <canvas id="taxa-numbers-chart-multiple"></canvas>
                         </div>
                         <div class="col-md-4">
-                            <canvas id="aspt-chart"></canvas>
+                            <canvas id="aspt-chart-multiple"></canvas>
                         </div>
                     </div>
                 </div>
@@ -137,8 +147,8 @@
                 <div class="vertical-space"></div>
                 <div class="chart-container ajax-container">
                     <div class="table-title">
-                        Ecological Chart
-                        <i data-download-title="Ecological charts"
+                        Ecological Category
+                        <i data-download-title="Ecological Category"
                            data-toggle="tooltip" data-placement="left"
                            title="Download charts"
                            class="fa fa-download pull-right download-icon download-chart"></i>
@@ -164,6 +174,10 @@
                             <button class="btn btn-info download-as-csv">
                                 Download as CSV
                             </button>
+                            <i data-download-title="SASS Taxa per biotope"
+                               data-toggle="tooltip" data-placement="left"
+                               title="Download table as PNG"
+                               class="fa fa-download pull-right download-icon download-table" style="padding-top: 7px; padding-left: 5px; padding-right: 5px;"></i>
                         </div>
                     </div>
 

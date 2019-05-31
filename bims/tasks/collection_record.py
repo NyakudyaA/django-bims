@@ -39,7 +39,7 @@ def download_data_to_csv(path_file, request):
         BioCollectionOneRowSerializer
     from bims.utils.celery import memcache_lock
     from bims.models import BiologicalCollectionRecord
-    from bims.api_views.search_version_2 import SearchVersion2
+    from bims.api_views.search import Search
 
     path_file_hexdigest = md5(path_file).hexdigest()
 
@@ -54,7 +54,7 @@ def download_data_to_csv(path_file, request):
         if acquired:
             filters = request
             site_results = None
-            search = SearchVersion2(filters)
+            search = Search(filters)
             collection_results = search.process_search()
 
             if not collection_results and site_results:
@@ -70,9 +70,19 @@ def download_data_to_csv(path_file, request):
             headers = serializer.data[0].keys()
             rows = serializer.data
 
+            formatted_headers = []
+            # Rename headers
+            for header in headers:
+                if header == 'class_name':
+                    header = 'class'
+                header = header.replace('_or_', '/')
+                header = header.replace('_', ' ').capitalize()
+                formatted_headers.append(header)
+
             with open(path_file, 'wb') as csv_file:
-                writer = csv.DictWriter(csv_file, fieldnames=headers)
+                writer = csv.DictWriter(csv_file, fieldnames=formatted_headers)
                 writer.writeheader()
+                writer.fieldnames = headers
                 for row in rows:
                     writer.writerow(row)
 
